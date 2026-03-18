@@ -346,6 +346,25 @@
     border-color: #64b4ff; color: #000;
   }
   .preview-box .pv-ctrl-buttons { display: grid; gap: 4px; }
+  .preview-box .pv-left-cluster, .preview-box .pv-right-cluster {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .preview-box .pv-center-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+  .preview-box .pv-center-btn {
+    min-width: 36px;
+    height: 36px;
+    font-size: 12px;
+    border-radius: 50%;
+  }
 
   /* Drag ghost */
   .drag-ghost {
@@ -528,6 +547,11 @@
     <label>RB ゲームパッドID</label>
     <input type="text" id="ctrl-shoulder-r" value="btn_5" style="width:100px">
     <span class="desc-text">上段右 (バンパー) のボタンID</span>
+  </div>
+  <div class="form-group">
+    <label>センターボタン</label>
+    <input type="text" id="ctrl-center-btns" value="btn_6,btn_8,btn_7" style="width:200px">
+    <span class="desc-text">中央小ボタンのID (カンマ区切り, 順に表示)</span>
   </div>
 
 
@@ -1071,7 +1095,10 @@ function renderPreviewController(grid) {
   const rbId = cc.shoulderRight || 'btn_5';
   const lbDef = allBtns.find(b => b.gamepad === lbId);
   const rbDef = allBtns.find(b => b.gamepad === rbId);
-  const faceBtns = allBtns.filter(b => b.gamepad !== lbId && b.gamepad !== rbId);
+  const centerIds = cc.centerButtons || ['btn_6', 'btn_8', 'btn_7'];
+  const centerSet = new Set(centerIds);
+  const centerBtnDefs = centerIds.map(id => allBtns.find(b => b.gamepad === id)).filter(Boolean);
+  const faceBtns = allBtns.filter(b => b.gamepad !== lbId && b.gamepad !== rbId && !centerSet.has(b.gamepad));
 
   // --- Top row: LT | LB | spacer | RB | RT ---
   const topRow = document.createElement('div');
@@ -1112,9 +1139,13 @@ function renderPreviewController(grid) {
   topRow.appendChild(r2Wrap);
   grid.appendChild(topRow);
 
-  // --- Main row: LS | D-pad | face buttons | RS ---
+  // --- Main row: leftCluster | centerBtns | rightCluster ---
   const mainRow = document.createElement('div');
   mainRow.className = 'pv-ctrl-main-row';
+
+  // Left cluster: LS + D-pad stacked
+  const leftCluster = document.createElement('div');
+  leftCluster.className = 'pv-left-cluster';
 
   // Left stick
   const lWrap = document.createElement('div');
@@ -1127,7 +1158,7 @@ function renderPreviewController(grid) {
   lLabel.textContent = 'L';
   lWrap.appendChild(lArea);
   lWrap.appendChild(lLabel);
-  mainRow.appendChild(lWrap);
+  leftCluster.appendChild(lWrap);
 
   // D-pad
   const dpadWrap = document.createElement('div');
@@ -1164,7 +1195,28 @@ function renderPreviewController(grid) {
   dpadLabel.textContent = 'D-Pad';
   dpadWrap.appendChild(dpad);
   dpadWrap.appendChild(dpadLabel);
-  mainRow.appendChild(dpadWrap);
+  leftCluster.appendChild(dpadWrap);
+  mainRow.appendChild(leftCluster);
+
+  // Center buttons (View / Home / Menu)
+  if (centerBtnDefs.length > 0) {
+    const centerDiv = document.createElement('div');
+    centerDiv.className = 'pv-center-btns';
+    centerBtnDefs.forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'pv-key pv-center-btn';
+      pvSetLabel(el, b.label);
+      pvMakeButton(el, b.gamepad, 'controller', 'buttons', allBtns.indexOf(b));
+      centerDiv.appendChild(el);
+      pvKeyEls[b.gamepad] = el;
+      pvButtonLabels[b.gamepad] = b.label;
+    });
+    mainRow.appendChild(centerDiv);
+  }
+
+  // Right cluster: face buttons + RS stacked
+  const rightCluster = document.createElement('div');
+  rightCluster.className = 'pv-right-cluster';
 
   // Face buttons grid
   if (faceBtns.length > 0) {
@@ -1186,7 +1238,7 @@ function renderPreviewController(grid) {
       pvKeyEls[id] = el;
       pvButtonLabels[id] = b.label;
     });
-    mainRow.appendChild(btnGrid);
+    rightCluster.appendChild(btnGrid);
   }
 
   // Right stick
@@ -1201,9 +1253,10 @@ function renderPreviewController(grid) {
     rLabel.textContent = 'R';
     rWrap.appendChild(rArea);
     rWrap.appendChild(rLabel);
-    mainRow.appendChild(rWrap);
+    rightCluster.appendChild(rWrap);
   }
 
+  mainRow.appendChild(rightCluster);
   grid.appendChild(mainRow);
 }
 
@@ -1414,6 +1467,7 @@ function renderControllerTab() {
   document.getElementById('ctrl-r2-axis').value = cc.r2Axis ?? 5;
   document.getElementById('ctrl-shoulder-l').value = cc.shoulderLeft || 'btn_4';
   document.getElementById('ctrl-shoulder-r').value = cc.shoulderRight || 'btn_5';
+  document.getElementById('ctrl-center-btns').value = (cc.centerButtons || ['btn_6', 'btn_8', 'btn_7']).join(',');
 
   const tbody = document.getElementById('ctrl-btns');
   const btns = cc.buttons || [];
@@ -1489,6 +1543,8 @@ async function saveOverlayConfig() {
   overlayConfig.controller.r2Axis = +document.getElementById('ctrl-r2-axis').value;
   overlayConfig.controller.shoulderLeft  = document.getElementById('ctrl-shoulder-l').value;
   overlayConfig.controller.shoulderRight = document.getElementById('ctrl-shoulder-r').value;
+  overlayConfig.controller.centerButtons = document.getElementById('ctrl-center-btns').value
+    .split(',').map(s => s.trim()).filter(Boolean);
 
   // Sync layout from inputs
   if (!overlayConfig.layout) overlayConfig.layout = {};

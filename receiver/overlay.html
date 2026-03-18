@@ -119,6 +119,26 @@
 
   .ctrl-buttons { display: grid; gap: 4px; }
 
+  .ctrl-left-cluster, .ctrl-right-cluster {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .ctrl-center-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+  .key-btn.center-btn {
+    min-width: 36px;
+    height: 36px;
+    font-size: 12px;
+    border-radius: 50%;
+  }
+
   /* L2/R2 analog bar */
   .trigger-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .trigger-bar-bg {
@@ -367,7 +387,10 @@ function buildController(cfg) {
   const rbId = cc.shoulderRight || 'btn_5';
   const lbDef = allBtns.find(b => b.gamepad === lbId);
   const rbDef = allBtns.find(b => b.gamepad === rbId);
-  const faceBtns = allBtns.filter(b => b.gamepad !== lbId && b.gamepad !== rbId);
+  const centerIds = cc.centerButtons || ['btn_6', 'btn_8', 'btn_7'];
+  const centerSet = new Set(centerIds);
+  const centerBtnDefs = centerIds.map(id => allBtns.find(b => b.gamepad === id)).filter(Boolean);
+  const faceBtns = allBtns.filter(b => b.gamepad !== lbId && b.gamepad !== rbId && !centerSet.has(b.gamepad));
 
   // --- Top row: LT | LB | spacer | RB | RT ---
   const topRow = document.createElement('div');
@@ -406,9 +429,13 @@ function buildController(cfg) {
   topRow.appendChild(r2Wrap);
   display.appendChild(topRow);
 
-  // --- Main row: LS | D-pad | face buttons | RS ---
+  // --- Main row: leftCluster | centerBtns | rightCluster ---
   const mainRow = document.createElement('div');
   mainRow.className = 'ctrl-main-row';
+
+  // Left cluster: LS + D-pad stacked
+  const leftCluster = document.createElement('div');
+  leftCluster.className = 'ctrl-left-cluster';
 
   // Left stick
   const lWrap = document.createElement('div');
@@ -422,7 +449,7 @@ function buildController(cfg) {
   lLabel.textContent = 'L';
   lWrap.appendChild(lArea);
   lWrap.appendChild(lLabel);
-  mainRow.appendChild(lWrap);
+  leftCluster.appendChild(lWrap);
 
   // D-pad
   const dpadWrap = document.createElement('div');
@@ -456,7 +483,27 @@ function buildController(cfg) {
   dpadLabel.textContent = 'D-Pad';
   dpadWrap.appendChild(dpad);
   dpadWrap.appendChild(dpadLabel);
-  mainRow.appendChild(dpadWrap);
+  leftCluster.appendChild(dpadWrap);
+  mainRow.appendChild(leftCluster);
+
+  // Center buttons (View / Home / Menu)
+  if (centerBtnDefs.length > 0) {
+    const centerDiv = document.createElement('div');
+    centerDiv.className = 'ctrl-center-btns';
+    centerBtnDefs.forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'key-btn center-btn';
+      setLabelContent(el, b.label);
+      centerDiv.appendChild(el);
+      keyElements[b.gamepad] = el;
+      buttonLabels[b.gamepad] = b.label;
+    });
+    mainRow.appendChild(centerDiv);
+  }
+
+  // Right cluster: face buttons + RS stacked
+  const rightCluster = document.createElement('div');
+  rightCluster.className = 'ctrl-right-cluster';
 
   // Face buttons grid
   if (faceBtns.length > 0) {
@@ -478,7 +525,7 @@ function buildController(cfg) {
         buttonLabels[b.gamepad] = b.label;
       }
     });
-    mainRow.appendChild(grid);
+    rightCluster.appendChild(grid);
   }
 
   // Right stick
@@ -494,9 +541,10 @@ function buildController(cfg) {
     rLabel.textContent = 'R';
     rWrap.appendChild(rArea);
     rWrap.appendChild(rLabel);
-    mainRow.appendChild(rWrap);
+    rightCluster.appendChild(rWrap);
   }
 
+  mainRow.appendChild(rightCluster);
   display.appendChild(mainRow);
 }
 
