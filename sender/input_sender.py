@@ -24,9 +24,11 @@ def load_config():
 config = load_config()
 
 ws_connection = None
-gamepad_mode = False
 running = True
 pressed_keys = set()
+
+MODES = ['keyboard', 'leverless', 'controller']
+current_mode = 'keyboard'
 
 TOGGLE_KEY_NAME = config.get("toggleKey", "f12")
 TOGGLE_KEY = getattr(keyboard.Key, TOGGLE_KEY_NAME, keyboard.Key.f12)
@@ -72,25 +74,25 @@ event_queue = JsonQueue()
 
 
 def on_press(key):
-    global gamepad_mode
+    global current_mode
     if key == TOGGLE_KEY:
-        gamepad_mode = not gamepad_mode
-        mode = "gamepad" if gamepad_mode else "keyboard"
-        print(f"[Mode] Switched to {mode}")
-        event_queue.put(make_event("mode_switch", mode, "system"))
+        idx = (MODES.index(current_mode) + 1) % len(MODES)
+        current_mode = MODES[idx]
+        print(f"[Mode] Switched to {current_mode}")
+        event_queue.put(make_event("mode_switch", current_mode, "system"))
         return
 
     key_str = key_to_str(key)
     if key_str not in pressed_keys:
         pressed_keys.add(key_str)
-        if not gamepad_mode:
+        if current_mode == 'keyboard':
             event_queue.put(make_event("key_down", key_str))
 
 
 def on_release(key):
     key_str = key_to_str(key)
     pressed_keys.discard(key_str)
-    if not gamepad_mode:
+    if current_mode == 'keyboard':
         event_queue.put(make_event("key_up", key_str))
 
 
@@ -98,7 +100,8 @@ def gamepad_loop():
     load_pygame()
     joy = None
     prev_buttons = {}
-    prev_axes = {}
+    prev_axes = {}       # leverless: threshold-based axis state
+    prev_axes_raw = {}   # controller: raw float values
 
     while running:
         pygame.event.pump()
@@ -113,13 +116,15 @@ def gamepad_loop():
                 joy = None
                 prev_buttons.clear()
                 prev_axes.clear()
+                prev_axes_raw.clear()
             time.sleep(0.1)
             continue
 
-        if not gamepad_mode:
+        if current_mode == 'keyboard':
             time.sleep(0.05)
             continue
 
+        # Buttons — send in both leverless and controller modes
         for i in range(joy.get_numbuttons()):
             val = joy.get_button(i)
             if val != prev_buttons.get(i, 0):
@@ -127,23 +132,7 @@ def gamepad_loop():
                 etype = "key_down" if val else "key_up"
                 event_queue.put(make_event(etype, f"btn_{i}", "gamepad"))
 
-        deadzone = 0.5
-        for i in range(joy.get_numaxes()):
-            raw = joy.get_axis(i)
-            if raw < -deadzone:
-                val = -1
-            elif raw > deadzone:
-                val = 1
-            else:
-                val = 0
-            prev = prev_axes.get(i, 0)
-            if val != prev:
-                if prev != 0:
-                    event_queue.put(make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad"))
-                if val != 0:
-                    event_queue.put(make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad"))
-                prev_axes[i] = val
-
+        # Hats — send in both leverless and controller modes
         for i in range(joy.get_numhats()):
             hat = joy.get_hat(i)
             prev_hat = prev_axes.get(f"hat_{i}", (0, 0))
@@ -158,6 +147,40 @@ def gamepad_loop():
                     event_queue.put(make_event("key_down", f"hat_{i}_{'down' if hat[1] < 0 else 'up'}", "gamepad"))
                 prev_axes[f"hat_{i}"] = hat
 
+        # Axes — mode-dependent handling
+        if current_mode == 'leverless':
+            # Threshold-based: emit key_down/key_up at ±0.5
+            deadzone = 0.5
+            for i in range(joy.get_numaxes()):
+                raw = joy.get_axis(i)
+                if raw < -deadzone:
+                    val = -1
+                elif raw > deadzone:
+                    val = 1
+                else:
+                    val = 0
+                prev = prev_axes.get(i, 0)
+                if val != prev:
+                    if prev != 0:
+                        event_queue.put(make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad"))
+                    if val != 0:
+                        event_queue.put(make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad"))
+                    prev_axes[i] = val
+
+        elif current_mode == 'controller':
+            # Continuous: send raw float values when they change enough
+            for i in range(joy.get_numaxes()):
+                raw = joy.get_axis(i)
+                if abs(raw - prev_axes_raw.get(i, 2.0)) > 0.01:
+                    prev_axes_raw[i] = raw
+                    event_queue.put(json.dumps({
+                        "type": "axis_update",
+                        "axis": i,
+                        "value": round(raw, 3),
+                        "source": "gamepad",
+                        "timestamp": time.time(),
+                    }))
+
         time.sleep(0.008)
 
 
@@ -170,7 +193,7 @@ async def sender(host, port):
         try:
             async with websockets.connect(uri) as ws:
                 ws_connection = ws
-                print(f"[Sender] Connected! ({TOGGLE_KEY_NAME.upper()} to toggle keyboard/gamepad)")
+                print(f"[Sender] Connected! ({TOGGLE_KEY_NAME.upper()} to cycle: keyboard → leverless → controller)")
                 while running:
                     msg = await event_queue.get()
                     await ws.send(msg)

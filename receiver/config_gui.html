@@ -19,6 +19,7 @@
     display: flex;
     gap: 4px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
   .tab {
     padding: 8px 16px;
@@ -53,7 +54,15 @@
     font-size: 14px;
     width: 200px;
   }
-  input:focus { outline: none; border-color: #64b4ff; }
+  select {
+    background: #2a2a4a;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: #64b4ff; }
 
   table {
     width: 100%;
@@ -99,6 +108,32 @@
   .status.ok { display: block; background: #1a4a1a; color: #4a4; }
   .status.err { display: block; background: #4a1a1a; color: #f66; }
   .hint { font-size: 12px; color: #666; margin-top: 4px; }
+
+  /* Preset bar */
+  .preset-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #22223a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .preset-bar select {
+    background: #2a2a4a;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    min-width: 160px;
+  }
+  .preset-bar .sep { color: #555; margin: 0 4px; }
+  .btn-load { background: #3a5a8a; color: #fff; font-size: 12px; padding: 5px 12px; }
+  .btn-preset-save { background: #3a6a3a; color: #fff; font-size: 12px; padding: 5px 12px; }
+  .btn-preset-del { background: #6a3a3a; color: #fff; font-size: 12px; padding: 5px 10px; }
 
   /* Preview */
   .preview-section {
@@ -152,6 +187,11 @@
   .preview-box .pv-grid {
     display: grid;
     gap: 4px;
+  }
+  .preview-box .pv-grid.ctrl-layout {
+    display: flex;
+    gap: 16px;
+    align-items: center;
   }
   .preview-box .pv-key {
     width: 56px;
@@ -207,6 +247,70 @@
     font-size: 11px;
     color: rgba(255,255,255,0.3);
   }
+
+  /* Preview stick */
+  .preview-box .pv-stick-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .preview-box .pv-stick-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+  }
+  .preview-box .pv-stick-area {
+    width: 80px;
+    height: 80px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-radius: 50%;
+    position: relative;
+    background: rgba(0,0,0,0.4);
+  }
+  .preview-box .pv-stick-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.6);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .preview-box .pv-dpad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 26px);
+    grid-template-rows: repeat(3, 26px);
+    gap: 2px;
+  }
+  .preview-box .pv-dpad-cell {
+    width: 26px;
+    height: 26px;
+  }
+  .preview-box .pv-dpad-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+    font-weight: bold;
+    border: 2px solid rgba(100,180,255,0.5);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.4);
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+  }
+  .preview-box .pv-dpad-btn.active {
+    background: rgba(100,180,255,0.85);
+    border-color: #64b4ff;
+    color: #000;
+  }
+  .preview-box .pv-ctrl-buttons {
+    display: grid;
+    gap: 4px;
+  }
 </style>
 </head>
 <body>
@@ -217,6 +321,7 @@
   <div class="tab active" data-tab="sender">Sender (Main PC)</div>
   <div class="tab" data-tab="keyboard">Keyboard レイアウト</div>
   <div class="tab" data-tab="leverless">Leverless レイアウト</div>
+  <div class="tab" data-tab="controller">Controller レイアウト</div>
   <div class="tab" data-tab="history">入力履歴</div>
 </div>
 
@@ -245,6 +350,15 @@
 
 <!-- Keyboard Layout -->
 <div class="tab-content" id="tab-keyboard">
+  <div class="preset-bar">
+    <span style="font-size:13px;color:#aaa;white-space:nowrap">レイアウトプリセット:</span>
+    <select id="preset-select"><option value="">-- 選択 --</option></select>
+    <button class="btn-load" onclick="loadPreset()">読み込み</button>
+    <button class="btn-preset-del" onclick="deletePreset()">削除</button>
+    <span class="sep">|</span>
+    <input type="text" id="preset-name-input" placeholder="プリセット名" style="width:150px;padding:5px 8px;font-size:13px">
+    <button class="btn-preset-save" onclick="savePreset()">現在の設定を保存</button>
+  </div>
   <h2>キーボード表示キー</h2>
   <table>
     <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
@@ -278,6 +392,49 @@
   </div>
 </div>
 
+<!-- Controller Layout -->
+<div class="tab-content" id="tab-controller">
+  <h2>アナログスティック</h2>
+  <div class="form-group">
+    <label>左スティック X 軸</label>
+    <input type="number" id="ctrl-ls-x" value="0" min="0" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>左スティック Y 軸</label>
+    <input type="number" id="ctrl-ls-y" value="1" min="0" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>右スティック X 軸</label>
+    <input type="number" id="ctrl-rs-x" value="2" min="0" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>右スティック Y 軸</label>
+    <input type="number" id="ctrl-rs-y" value="3" min="0" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>デッドゾーン</label>
+    <input type="number" id="ctrl-deadzone" value="0.15" min="0" max="1" step="0.05" style="width:80px">
+  </div>
+  <div class="form-group">
+    <label>方向ソース</label>
+    <select id="ctrl-dir-src" style="width:200px">
+      <option value="leftStick">左スティック</option>
+      <option value="rightStick">右スティック</option>
+      <option value="hat">D-Pad (Hat)</option>
+    </select>
+  </div>
+
+  <h2>ボタン</h2>
+  <table>
+    <thead><tr><th>Gamepad ID</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <tbody id="ctrl-btns"></tbody>
+  </table>
+  <div class="btn-row">
+    <button class="btn-add" onclick="addCtrlBtn()">+ ボタン追加</button>
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
 <!-- History -->
 <div class="tab-content" id="tab-history">
   <h2>Keyboard モード</h2>
@@ -302,6 +459,17 @@
     <input type="number" id="hist-lv-idle" value="3000" min="0">
   </div>
 
+  <h2>Controller モード</h2>
+  <div class="form-group">
+    <label>最大表示数</label>
+    <input type="number" id="hist-ct-max" value="10" min="0">
+    <span style="font-size:12px;color:#666">0 = 非表示</span>
+  </div>
+  <div class="form-group">
+    <label>アイドルタイムアウト (ms)</label>
+    <input type="number" id="hist-ct-idle" value="3000" min="0">
+  </div>
+
   <div class="btn-row">
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
   </div>
@@ -314,6 +482,7 @@
     <div class="preview-mode-toggle">
       <button class="preview-mode-btn active" data-mode="keyboard" onclick="setPreviewMode('keyboard')">Keyboard</button>
       <button class="preview-mode-btn" data-mode="leverless" onclick="setPreviewMode('leverless')">Leverless</button>
+      <button class="preview-mode-btn" data-mode="controller" onclick="setPreviewMode('controller')">Controller</button>
     </div>
   </div>
   <div class="preview-box" id="preview-box">
@@ -338,8 +507,12 @@ let pvHistoryEntries = [];
 let pvDirState = { left: false, right: false, up: false, down: false };
 let pvButtonLabels = {};
 
-// Direction key mapping
+// Direction key mapping (keyboard / leverless)
 const pvDirKeys = { a: 'left', d: 'right', w: 'up', s: 'down' };
+// Controller hat direction mapping
+const pvHatDirKeys = {
+  hat_0_left: 'left', hat_0_right: 'right', hat_0_up: 'up', hat_0_down: 'down'
+};
 
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
@@ -383,13 +556,16 @@ function setPreviewMode(mode) {
 function renderPreview() {
   const grid = document.getElementById('pv-grid');
   grid.innerHTML = '';
+  grid.className = 'pv-grid';
   pvKeyEls = {};
   pvButtonLabels = {};
 
   if (previewMode === 'keyboard') {
     renderPreviewKeyboard(grid);
-  } else {
+  } else if (previewMode === 'leverless') {
     renderPreviewLeverless(grid);
+  } else {
+    renderPreviewController(grid);
   }
 }
 
@@ -461,6 +637,102 @@ function renderPreviewLeverless(grid) {
   });
 }
 
+function renderPreviewController(grid) {
+  grid.classList.add('ctrl-layout');
+  const cc = overlayConfig.controller || {};
+  const btns = cc.buttons || [];
+
+  // Left stick (static visual)
+  const lWrap = document.createElement('div');
+  lWrap.className = 'pv-stick-wrap';
+  const lArea = document.createElement('div');
+  lArea.className = 'pv-stick-area';
+  lArea.innerHTML = '<div class="pv-stick-dot"></div>';
+  const lLabel = document.createElement('div');
+  lLabel.className = 'pv-stick-label';
+  lLabel.textContent = 'L';
+  lWrap.appendChild(lArea);
+  lWrap.appendChild(lLabel);
+  grid.appendChild(lWrap);
+
+  // D-pad (clickable)
+  const dpadWrap = document.createElement('div');
+  dpadWrap.className = 'pv-stick-wrap';
+  const dpad = document.createElement('div');
+  dpad.className = 'pv-dpad-grid';
+  const hatBtns = [
+    { key: 'hat_0_up',    label: '↑', r: 0, c: 1 },
+    { key: 'hat_0_left',  label: '←', r: 1, c: 0 },
+    { key: 'hat_0_right', label: '→', r: 1, c: 2 },
+    { key: 'hat_0_down',  label: '↓', r: 2, c: 1 },
+  ];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const hb = hatBtns.find(b => b.r === r && b.c === c);
+      if (hb) {
+        const el = document.createElement('div');
+        el.className = 'pv-dpad-btn';
+        el.textContent = hb.label;
+        el.addEventListener('mousedown', () => pvSimPress(hb.key, el));
+        el.addEventListener('mouseup', () => pvSimRelease(hb.key, el));
+        el.addEventListener('mouseleave', () => { if (pvPressed.has(hb.key)) pvSimRelease(hb.key, el); });
+        dpad.appendChild(el);
+        pvKeyEls[hb.key] = el;
+      } else {
+        const spacer = document.createElement('div');
+        spacer.className = 'pv-dpad-cell';
+        dpad.appendChild(spacer);
+      }
+    }
+  }
+  const dpadLabel = document.createElement('div');
+  dpadLabel.className = 'pv-stick-label';
+  dpadLabel.textContent = 'D-Pad';
+  dpadWrap.appendChild(dpad);
+  dpadWrap.appendChild(dpadLabel);
+  grid.appendChild(dpadWrap);
+
+  // Face buttons (clickable)
+  if (btns.length > 0) {
+    const maxCol = Math.max(...btns.map(b => b.col)) + 1;
+    const maxRow = Math.max(...btns.map(b => b.row)) + 1;
+    const btnGrid = document.createElement('div');
+    btnGrid.className = 'pv-ctrl-buttons';
+    btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
+    btnGrid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+    btns.forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'pv-key';
+      el.textContent = b.label;
+      el.style.gridRow = b.row + 1;
+      el.style.gridColumn = b.col + 1;
+      const id = b.gamepad || b.label;
+      el.addEventListener('mousedown', () => pvSimPress(id, el));
+      el.addEventListener('mouseup', () => pvSimRelease(id, el));
+      el.addEventListener('mouseleave', () => { if (pvPressed.has(id)) pvSimRelease(id, el); });
+      btnGrid.appendChild(el);
+      pvKeyEls[id] = el;
+      pvButtonLabels[id] = b.label;
+    });
+    grid.appendChild(btnGrid);
+  }
+
+  // Right stick (static visual)
+  if (cc.rightStick) {
+    const rWrap = document.createElement('div');
+    rWrap.className = 'pv-stick-wrap';
+    const rArea = document.createElement('div');
+    rArea.className = 'pv-stick-area';
+    rArea.innerHTML = '<div class="pv-stick-dot"></div>';
+    const rLabel = document.createElement('div');
+    rLabel.className = 'pv-stick-label';
+    rLabel.textContent = 'R';
+    rWrap.appendChild(rArea);
+    rWrap.appendChild(rLabel);
+    grid.appendChild(rWrap);
+  }
+}
+
 function pvGetCurrentStateText() {
   const arrow = pvGetArrow(pvGetNumpad());
   const btns = [];
@@ -487,14 +759,25 @@ function pvRecordCurrentState() {
 function pvSimPress(key, el) {
   pvPressed.add(key);
   el.classList.add('active');
-  if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = true;
+  // Direction handling
+  if (previewMode === 'controller') {
+    const dirName = pvHatDirKeys[key];
+    if (dirName) pvDirState[dirName] = true;
+  } else {
+    if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = true;
+  }
   pvRecordCurrentState();
 }
 
 function pvSimRelease(key, el) {
   pvPressed.delete(key);
   el.classList.remove('active');
-  if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = false;
+  if (previewMode === 'controller') {
+    const dirName = pvHatDirKeys[key];
+    if (dirName) pvDirState[dirName] = false;
+  } else {
+    if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = false;
+  }
   pvRecordCurrentState();
 }
 
@@ -527,8 +810,7 @@ function pvAddHistory(text) {
 
 // Keyboard input for preview
 document.addEventListener('keydown', (e) => {
-  // Don't capture if typing in an input field
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   const key = e.key.toLowerCase();
   const el = pvKeyEls[key];
   if (el && !pvPressed.has(key)) {
@@ -536,7 +818,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('keyup', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   const key = e.key.toLowerCase();
   const el = pvKeyEls[key];
   if (el) {
@@ -626,17 +908,81 @@ function delLv(field, i) {
   renderLeverless();
 }
 
+// Controller tab editing
+function renderControllerTab() {
+  const cc = overlayConfig.controller || {};
+  document.getElementById('ctrl-ls-x').value = cc.leftStick?.axisX ?? 0;
+  document.getElementById('ctrl-ls-y').value = cc.leftStick?.axisY ?? 1;
+  document.getElementById('ctrl-rs-x').value = cc.rightStick?.axisX ?? 2;
+  document.getElementById('ctrl-rs-y').value = cc.rightStick?.axisY ?? 3;
+  document.getElementById('ctrl-deadzone').value = cc.deadzone ?? 0.15;
+  document.getElementById('ctrl-dir-src').value = cc.directionSource || 'leftStick';
+
+  const tbody = document.getElementById('ctrl-btns');
+  const btns = cc.buttons || [];
+  tbody.innerHTML = btns.map((b, i) => `
+    <tr>
+      <td><input value="${b.gamepad || ''}" data-i="${i}" data-f="gamepad"></td>
+      <td><input value="${b.label}" data-i="${i}" data-f="label"></td>
+      <td><input class="narrow" type="number" value="${b.row}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" value="${b.col}" data-i="${i}" data-f="col"></td>
+      <td><button class="btn-del" onclick="delCtrlBtn(${i})">✕</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const idx = +inp.dataset.i;
+      const f = inp.dataset.f;
+      let val = inp.value;
+      if (f === 'row' || f === 'col') val = +val;
+      if (!overlayConfig.controller) overlayConfig.controller = {};
+      if (!overlayConfig.controller.buttons) overlayConfig.controller.buttons = [];
+      overlayConfig.controller.buttons[idx][f] = val;
+      renderPreview();
+    });
+  });
+}
+
+function addCtrlBtn() {
+  if (!overlayConfig.controller) overlayConfig.controller = { leftStick: {axisX:0,axisY:1}, rightStick: {axisX:2,axisY:3}, deadzone: 0.15, directionSource: 'leftStick', buttons: [] };
+  if (!overlayConfig.controller.buttons) overlayConfig.controller.buttons = [];
+  overlayConfig.controller.buttons.push({ gamepad: '', label: '', row: 0, col: 0 });
+  renderControllerTab();
+  renderPreview();
+}
+function delCtrlBtn(i) {
+  overlayConfig.controller.buttons.splice(i, 1);
+  renderControllerTab();
+  renderPreview();
+}
+
 function renderHistory() {
   const h = overlayConfig.inputHistory || {};
   const kb = h.keyboard || {};
   const lv = h.leverless || {};
+  const ct = h.controller || {};
   document.getElementById('hist-kb-max').value  = kb.maxEntries  ?? 10;
   document.getElementById('hist-kb-idle').value = kb.idleTimeoutMs ?? 3000;
   document.getElementById('hist-lv-max').value  = lv.maxEntries  ?? 10;
   document.getElementById('hist-lv-idle').value = lv.idleTimeoutMs ?? 3000;
+  document.getElementById('hist-ct-max').value  = ct.maxEntries  ?? 10;
+  document.getElementById('hist-ct-idle').value = ct.idleTimeoutMs ?? 3000;
 }
 
 async function saveOverlayConfig() {
+  // Sync controller settings from form
+  if (!overlayConfig.controller) overlayConfig.controller = {};
+  overlayConfig.controller.leftStick = {
+    axisX: +document.getElementById('ctrl-ls-x').value,
+    axisY: +document.getElementById('ctrl-ls-y').value,
+  };
+  overlayConfig.controller.rightStick = {
+    axisX: +document.getElementById('ctrl-rs-x').value,
+    axisY: +document.getElementById('ctrl-rs-y').value,
+  };
+  overlayConfig.controller.deadzone = +document.getElementById('ctrl-deadzone').value;
+  overlayConfig.controller.directionSource = document.getElementById('ctrl-dir-src').value;
+
   overlayConfig.inputHistory = {
     keyboard:  {
       maxEntries:   +document.getElementById('hist-kb-max').value,
@@ -645,6 +991,10 @@ async function saveOverlayConfig() {
     leverless: {
       maxEntries:   +document.getElementById('hist-lv-max').value,
       idleTimeoutMs: +document.getElementById('hist-lv-idle').value,
+    },
+    controller: {
+      maxEntries:   +document.getElementById('hist-ct-max').value,
+      idleTimeoutMs: +document.getElementById('hist-ct-idle').value,
     },
   };
 
@@ -672,6 +1022,85 @@ async function saveSenderConfig() {
   showStatus(data.ok ? '保存しました (Sender を再起動してください)' : 'エラー: ' + data.error, data.ok);
 }
 
+// ===== Presets =====
+let presetsData = {};
+
+function renderPresetSelect() {
+  const sel = document.getElementById('preset-select');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">-- 選択 --</option>';
+  Object.keys(presetsData).sort().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === cur) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function fetchPresets() {
+  const res = await fetch('/api/presets');
+  presetsData = await res.json();
+  renderPresetSelect();
+}
+
+function loadPreset() {
+  const name = document.getElementById('preset-select').value;
+  if (!name || !presetsData[name]) return;
+  const p = presetsData[name];
+  if (p.keyboard) overlayConfig.keyboard = JSON.parse(JSON.stringify(p.keyboard));
+  if (p.leverless) overlayConfig.leverless = JSON.parse(JSON.stringify(p.leverless));
+  if (p.controller) overlayConfig.controller = JSON.parse(JSON.stringify(p.controller));
+  renderKbKeys();
+  renderLeverless();
+  renderControllerTab();
+  showStatus(`プリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
+}
+
+async function savePreset() {
+  const name = document.getElementById('preset-name-input').value.trim();
+  if (!name) { showStatus('プリセット名を入力してください', false); return; }
+  const res = await fetch('/api/presets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      keyboard: overlayConfig.keyboard || {},
+      leverless: overlayConfig.leverless || {},
+      controller: overlayConfig.controller || {},
+    }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    presetsData[name] = { keyboard: overlayConfig.keyboard, leverless: overlayConfig.leverless, controller: overlayConfig.controller };
+    renderPresetSelect();
+    document.getElementById('preset-select').value = name;
+    document.getElementById('preset-name-input').value = '';
+    showStatus(`プリセット「${name}」を保存しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
+async function deletePreset() {
+  const name = document.getElementById('preset-select').value;
+  if (!name) return;
+  if (!confirm(`プリセット「${name}」を削除しますか？`)) return;
+  const res = await fetch('/api/presets', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    delete presetsData[name];
+    renderPresetSelect();
+    showStatus(`プリセット「${name}」を削除しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
 async function init() {
   const [cfgRes, sndRes] = await Promise.all([
     fetch('/api/config'),
@@ -686,8 +1115,10 @@ async function init() {
 
   renderKbKeys();
   renderLeverless();
+  renderControllerTab();
   renderHistory();
   renderPreview();
+  await fetchPresets();
 }
 
 init();

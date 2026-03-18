@@ -17,6 +17,7 @@ sender_ws = None
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_PATH = OVERLAY_DIR / "config.json"
+PRESETS_PATH = OVERLAY_DIR / "presets.json"
 
 
 def load_config():
@@ -29,6 +30,16 @@ def save_config(data):
     CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def load_presets():
+    if PRESETS_PATH.exists():
+        return json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+    return {}
+
+
+def save_presets(data):
+    PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 class OverlayHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -39,6 +50,10 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
         if path == "api/config":
             self._json_response(load_config())
+            return
+
+        if path == "api/presets":
+            self._json_response(load_presets())
             return
 
         if path == "api/sender-config":
@@ -85,11 +100,44 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(e)}, 400)
             return
 
+        if parsed.path == "/api/presets":
+            try:
+                data = json.loads(body)
+                presets = load_presets()
+                preset = {"keyboard": data.get("keyboard", {}), "leverless": data.get("leverless", {})}
+                if "controller" in data:
+                    preset["controller"] = data["controller"]
+                presets[data["name"]] = preset
+                save_presets(presets)
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
         if parsed.path == "/api/sender-config":
             try:
                 data = json.loads(body)
                 sender_cfg_path = OVERLAY_DIR.parent / "sender" / "sender_config.json"
                 sender_cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+
+        if parsed.path == "/api/presets":
+            try:
+                data = json.loads(body)
+                presets = load_presets()
+                presets.pop(data["name"], None)
+                save_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)

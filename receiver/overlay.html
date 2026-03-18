@@ -18,12 +18,17 @@
     align-items: flex-start;
   }
 
-  /* Key grid */
+  /* Key grid (keyboard / leverless) */
   #key-display {
     display: grid;
     gap: 4px;
     grid-template-columns: repeat(var(--cols, 9), 56px);
     grid-template-rows: repeat(2, 56px);
+  }
+  #key-display.ctrl-layout {
+    display: flex;
+    gap: 16px;
+    align-items: center;
   }
   .key-btn {
     width: 56px;
@@ -56,6 +61,77 @@
   /* Separator between directions and buttons in leverless */
   .key-spacer {
     width: 20px;
+  }
+
+  /* Analog stick visual */
+  .stick-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .stick-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+  }
+  .stick-area {
+    width: 80px;
+    height: 80px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-radius: 50%;
+    position: relative;
+    background: rgba(0,0,0,0.4);
+  }
+  .stick-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.6);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition: left 0.04s, top 0.04s;
+  }
+  .stick-area.tilted .stick-dot {
+    background: rgba(255,220,50,0.9);
+  }
+
+  /* D-pad (controller mode) */
+  .dpad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 26px);
+    grid-template-rows: repeat(3, 26px);
+    gap: 2px;
+  }
+  .dpad-cell {
+    width: 26px;
+    height: 26px;
+  }
+  .dpad-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+    font-weight: bold;
+    border: 2px solid rgba(100,180,255,0.5);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.4);
+    color: #fff;
+    transition: background 0.05s;
+  }
+  .dpad-btn.active {
+    background: rgba(100,180,255,0.85);
+    border-color: #64b4ff;
+    color: #000;
+  }
+
+  /* Controller button grid */
+  .ctrl-buttons {
+    display: grid;
+    gap: 4px;
   }
 
   /* Input history */
@@ -100,7 +176,7 @@ const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
 const NEUTRAL = 'Ⓝ';
 
 let config = null;
-let mode = 'keyboard'; // 'keyboard' or 'leverless'
+let mode = 'keyboard'; // 'keyboard', 'leverless', 'controller'
 let pressedKeys = new Set();
 let keyElements = {};
 
@@ -122,6 +198,9 @@ const gamepadDirKeys = {
 // Non-direction button label lookup (key/gamepad id → display label)
 let buttonLabels = {};
 
+// Analog stick state (controller mode)
+let axisState = {};
+
 function getNumpad() {
   const h = dirState.left ? -1 : dirState.right ? 1 : 0;
   const v = dirState.down ? -1 : dirState.up ? 1 : 0;
@@ -141,6 +220,7 @@ function getDirArrow(numpad) {
 function buildKeyboard(cfg) {
   const display = document.getElementById('key-display');
   display.innerHTML = '';
+  display.className = '';
   keyElements = {};
   buttonLabels = {};
   const keys = cfg.keyboard.displayKeys;
@@ -162,7 +242,6 @@ function buildKeyboard(cfg) {
         el.style.gridColumn = c + 1;
         display.appendChild(el);
         keyElements[k.key] = el;
-        // Non-direction keys get a button label for history
         if (!kbDirSet.has(k.key)) {
           buttonLabels[k.key] = k.label;
         }
@@ -174,6 +253,7 @@ function buildKeyboard(cfg) {
 function buildLeverless(cfg) {
   const display = document.getElementById('key-display');
   display.innerHTML = '';
+  display.className = '';
   keyElements = {};
   buttonLabels = {};
 
@@ -210,23 +290,168 @@ function buildLeverless(cfg) {
   });
 }
 
+function buildController(cfg) {
+  const display = document.getElementById('key-display');
+  display.innerHTML = '';
+  display.className = 'ctrl-layout';
+  keyElements = {};
+  buttonLabels = {};
+  axisState = {};
+
+  const cc = cfg.controller || {};
+
+  // Left stick
+  const lWrap = document.createElement('div');
+  lWrap.className = 'stick-wrap';
+  const lArea = document.createElement('div');
+  lArea.className = 'stick-area';
+  lArea.id = 'stick-left';
+  lArea.innerHTML = '<div class="stick-dot"></div>';
+  const lLabel = document.createElement('div');
+  lLabel.className = 'stick-label';
+  lLabel.textContent = 'L';
+  lWrap.appendChild(lArea);
+  lWrap.appendChild(lLabel);
+  display.appendChild(lWrap);
+
+  // D-pad
+  const dpadWrap = document.createElement('div');
+  dpadWrap.className = 'stick-wrap';
+  const dpad = document.createElement('div');
+  dpad.className = 'dpad-grid';
+  const hatBtns = [
+    { key: 'hat_0_up',    label: '↑', r: 0, c: 1 },
+    { key: 'hat_0_left',  label: '←', r: 1, c: 0 },
+    { key: 'hat_0_right', label: '→', r: 1, c: 2 },
+    { key: 'hat_0_down',  label: '↓', r: 2, c: 1 },
+  ];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const hb = hatBtns.find(b => b.r === r && b.c === c);
+      if (hb) {
+        const el = document.createElement('div');
+        el.className = 'dpad-btn';
+        el.textContent = hb.label;
+        dpad.appendChild(el);
+        keyElements[hb.key] = el;
+      } else {
+        const spacer = document.createElement('div');
+        spacer.className = 'dpad-cell';
+        dpad.appendChild(spacer);
+      }
+    }
+  }
+  const dpadLabel = document.createElement('div');
+  dpadLabel.className = 'stick-label';
+  dpadLabel.textContent = 'D-Pad';
+  dpadWrap.appendChild(dpad);
+  dpadWrap.appendChild(dpadLabel);
+  display.appendChild(dpadWrap);
+
+  // Face buttons
+  const btns = cc.buttons || [];
+  if (btns.length > 0) {
+    const maxCol = Math.max(...btns.map(b => b.col)) + 1;
+    const maxRow = Math.max(...btns.map(b => b.row)) + 1;
+    const grid = document.createElement('div');
+    grid.className = 'ctrl-buttons';
+    grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
+    grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+    btns.forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'key-btn';
+      el.textContent = b.label;
+      el.style.gridRow = b.row + 1;
+      el.style.gridColumn = b.col + 1;
+      grid.appendChild(el);
+      if (b.gamepad) {
+        keyElements[b.gamepad] = el;
+        buttonLabels[b.gamepad] = b.label;
+      }
+    });
+    display.appendChild(grid);
+  }
+
+  // Right stick
+  if (cc.rightStick) {
+    const rWrap = document.createElement('div');
+    rWrap.className = 'stick-wrap';
+    const rArea = document.createElement('div');
+    rArea.className = 'stick-area';
+    rArea.id = 'stick-right';
+    rArea.innerHTML = '<div class="stick-dot"></div>';
+    const rLabel = document.createElement('div');
+    rLabel.className = 'stick-label';
+    rLabel.textContent = 'R';
+    rWrap.appendChild(rArea);
+    rWrap.appendChild(rLabel);
+    display.appendChild(rWrap);
+  }
+}
+
+function updateStickEl(el, x, y) {
+  if (!el) return;
+  const dz = config?.controller?.deadzone ?? 0.15;
+  const mag = Math.hypot(x, y);
+  const dot = el.querySelector('.stick-dot');
+  if (mag < dz) {
+    dot.style.left = '50%';
+    dot.style.top = '50%';
+    el.classList.remove('tilted');
+  } else {
+    dot.style.left = (50 + x * 38) + '%';
+    dot.style.top  = (50 + y * 38) + '%';
+    el.classList.add('tilted');
+  }
+}
+
+function updateStickVisuals() {
+  if (!config?.controller) return;
+  const cc = config.controller;
+  const lsX = cc.leftStick?.axisX ?? 0;
+  const lsY = cc.leftStick?.axisY ?? 1;
+  updateStickEl(document.getElementById('stick-left'), axisState[lsX] ?? 0, axisState[lsY] ?? 0);
+  if (cc.rightStick) {
+    const rsX = cc.rightStick.axisX ?? 2;
+    const rsY = cc.rightStick.axisY ?? 3;
+    updateStickEl(document.getElementById('stick-right'), axisState[rsX] ?? 0, axisState[rsY] ?? 0);
+  }
+}
+
+function updateDirFromStick() {
+  if (!config?.controller) return;
+  const cc = config.controller;
+  const src = cc.directionSource || 'leftStick';
+  const stick = cc[src];
+  if (!stick) return;
+  const x = axisState[stick.axisX] ?? 0;
+  const y = axisState[stick.axisY] ?? 0;
+  const t = 0.5;
+  dirState.left  = x < -t;
+  dirState.right = x > t;
+  dirState.up    = y < -t;
+  dirState.down  = y > t;
+}
+
 function histCfg() {
-  // Returns inputHistory settings for current mode
   const h = config?.inputHistory || {};
   return h[mode] || h || {};
 }
 
 function buildLayout() {
   if (!config) return;
-  if (mode === 'leverless') {
+  if (mode === 'controller') {
+    buildController(config);
+  } else if (mode === 'leverless') {
     buildLeverless(config);
   } else {
     buildKeyboard(config);
   }
   document.getElementById('mode-label').textContent = mode.toUpperCase();
-  // Reset history on mode switch
+  // Reset state on mode switch
   pressedKeys.clear();
   dirState = { left: false, right: false, up: false, down: false };
+  axisState = {};
   historyEntries = [];
   const histEl = document.getElementById('history');
   const max = histCfg().maxEntries ?? 10;
@@ -248,21 +473,16 @@ function resetIdleTimer() {
   }, timeout);
 }
 
-// Build a string representing the current full input state
 function getCurrentStateText() {
   const arrow = getDirArrow(getNumpad());
-
-  // Collect all pressed non-direction button labels (preserve insertion order)
   const btns = [];
   for (const key of pressedKeys) {
     const label = buttonLabels[key];
     if (label) btns.push(label);
   }
-
   if (!arrow && btns.length === 0) {
     return NEUTRAL;
   }
-
   const parts = [];
   if (arrow) parts.push(arrow);
   parts.push(...btns);
@@ -272,18 +492,11 @@ function getCurrentStateText() {
 function recordCurrentState() {
   const max = histCfg().maxEntries ?? 10;
   if (max === 0) return;
-
   const text = getCurrentStateText();
-
-  // null = 記録しない（キーボードモードのニュートラル）
   if (text === null) return;
-
-  // Skip duplicate consecutive entries
   if (historyEntries.length > 0 && historyEntries[historyEntries.length - 1] === text) return;
-
   historyEntries.push(text);
   if (historyEntries.length > max) historyEntries.shift();
-
   const histEl = document.getElementById('history');
   histEl.innerHTML = '';
   historyEntries.forEach(entry => {
@@ -300,8 +513,19 @@ function handleInput(data) {
   const key = data.key;
   const isDown = data.type === 'key_down';
   const el = keyElements[key];
-  const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
-  const dirName = dMap[key];
+
+  // Direction mapping: in controller mode, hat events update dirState only if directionSource is 'hat'
+  let dirName = null;
+  if (mode === 'controller') {
+    const src = config?.controller?.directionSource || 'leftStick';
+    if (src === 'hat') {
+      dirName = gamepadDirKeys[key] || null;
+    }
+    // leftStick direction is handled by axis_update, not here
+  } else {
+    const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
+    dirName = dMap ? dMap[key] : null;
+  }
 
   if (isDown) {
     pressedKeys.add(key);
@@ -314,6 +538,18 @@ function handleInput(data) {
   }
 
   recordCurrentState();
+}
+
+function handleAxisUpdate(data) {
+  axisState[data.axis] = data.value;
+  if (mode === 'controller') {
+    updateStickVisuals();
+    const src = config?.controller?.directionSource || 'leftStick';
+    if (src !== 'hat') {
+      updateDirFromStick();
+    }
+    recordCurrentState();
+  }
 }
 
 // WebSocket connection
@@ -330,10 +566,18 @@ function connect() {
       config = data.data;
       buildLayout();
     } else if (data.type === 'mode_switch') {
-      mode = data.key === 'gamepad' ? 'leverless' : 'keyboard';
+      // Support old 'gamepad' key for backward compat
+      if (data.key === 'gamepad') {
+        mode = 'leverless';
+      } else {
+        mode = data.key;
+      }
       pressedKeys.clear();
       dirState = { left: false, right: false, up: false, down: false };
+      axisState = {};
       buildLayout();
+    } else if (data.type === 'axis_update') {
+      handleAxisUpdate(data);
     } else {
       handleInput(data);
     }
