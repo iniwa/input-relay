@@ -179,6 +179,20 @@
         "row": 1,
         "col": 9,
         "width": 1
+      },
+      {
+        "key": "mouse_x1",
+        "label": "Side1",
+        "row": 2,
+        "col": 8,
+        "width": 1
+      },
+      {
+        "key": "mouse_x2",
+        "label": "Side2",
+        "row": 3,
+        "col": 8,
+        "width": 1
       }
     ]
   },
@@ -258,21 +272,14 @@
       },
       {
         "key": "l",
-        "gamepad": "btn_0",
+        "gamepad": "axis_5_pos",
         "label": "HK",
         "row": 2,
         "col": 9
       },
       {
-        "key": ";",
-        "gamepad": "btn_0",
-        "label": "KK",
-        "row": 2,
-        "col": 10
-      },
-      {
-        "key": "",
-        "gamepad": "",
+        "key": "a",
+        "gamepad": "axis_4_pos",
         "label": "MP+MK",
         "row": 3,
         "col": 6,
@@ -357,7 +364,7 @@
   "layout": {
     "keyDisplay": {
       "x": 34,
-      "y": 24
+      "y": 66
     },
     "history": {
       "x": 0,

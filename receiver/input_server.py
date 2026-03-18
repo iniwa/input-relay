@@ -65,16 +65,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
             self._json_response(load_config())
             return
 
-        if path == "history":
-            self.send_response(302)
-            self.send_header("Location", "/overlay.html?mode=history")
-            self.end_headers()
-            return
-
-        if path == "input":
-            self.send_response(302)
-            self.send_header("Location", "/overlay.html?mode=input")
-            self.end_headers()
+        if path in ("history", "input"):
+            self._serve_overlay_with_mode(path)
             return
 
         if path == "api/presets":
@@ -192,6 +184,18 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+
+    def _serve_overlay_with_mode(self, mode):
+        file_path = OVERLAY_DIR / "overlay.html"
+        content = file_path.read_text(encoding="utf-8")
+        inject = f'<script>window.__DISPLAY_MODE__="{mode}";</script>'
+        content = content.replace("<head>", f"<head>{inject}", 1)
+        body = content.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _json_response(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")

@@ -114,22 +114,18 @@ def on_press(key):
     with _pressed_keys_lock:
         if key_str not in pressed_keys:
             pressed_keys.add(key_str)
-            if current_mode == 'keyboard':
-                event_queue.put(make_event("key_down", key_str))
+            event_queue.put(make_event("key_down", key_str))
 
 
 def on_release(key):
     key_str = key_to_str(key)
     with _pressed_keys_lock:
         pressed_keys.discard(key_str)
-    if current_mode == 'keyboard':
-        event_queue.put(make_event("key_up", key_str))
+    event_queue.put(make_event("key_up", key_str))
 
 
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
-    if current_mode != 'keyboard':
-        return
     btn_map = {
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
@@ -191,39 +187,34 @@ def gamepad_loop():
                     event_queue.put(make_event("key_down", f"hat_{i}_{'down' if hat[1] < 0 else 'up'}", "gamepad"))
                 prev_axes[f"hat_{i}"] = hat
 
-        # Axes — mode-dependent handling
-        if current_mode == 'leverless':
-            # Threshold-based: emit key_down/key_up at +/-0.5
-            deadzone = 0.5
-            for i in range(joy.get_numaxes()):
-                raw = joy.get_axis(i)
-                if raw < -deadzone:
-                    val = -1
-                elif raw > deadzone:
-                    val = 1
-                else:
-                    val = 0
-                prev = prev_axes.get(i, 0)
-                if val != prev:
-                    if prev != 0:
-                        event_queue.put(make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad"))
-                    if val != 0:
-                        event_queue.put(make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad"))
-                    prev_axes[i] = val
-
-        elif current_mode == 'controller':
-            # Continuous: send raw float values when they change enough
-            for i in range(joy.get_numaxes()):
-                raw = joy.get_axis(i)
-                if abs(raw - prev_axes_raw.get(i, 2.0)) > 0.01:
-                    prev_axes_raw[i] = raw
-                    event_queue.put(json.dumps({
-                        "type": "axis_update",
-                        "axis": i,
-                        "value": round(raw, 3),
-                        "source": "gamepad",
-                        "timestamp": time.time(),
-                    }))
+        # Axes — always send both threshold-based and continuous
+        deadzone = 0.5
+        for i in range(joy.get_numaxes()):
+            raw = joy.get_axis(i)
+            # Threshold-based (leverless style)
+            if raw < -deadzone:
+                val = -1
+            elif raw > deadzone:
+                val = 1
+            else:
+                val = 0
+            prev = prev_axes.get(i, 0)
+            if val != prev:
+                if prev != 0:
+                    event_queue.put(make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad"))
+                if val != 0:
+                    event_queue.put(make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad"))
+                prev_axes[i] = val
+            # Continuous (controller style)
+            if abs(raw - prev_axes_raw.get(i, 2.0)) > 0.01:
+                prev_axes_raw[i] = raw
+                event_queue.put(json.dumps({
+                    "type": "axis_update",
+                    "axis": i,
+                    "value": round(raw, 3),
+                    "source": "gamepad",
+                    "timestamp": time.time(),
+                }))
 
         time.sleep(0.008)
 
