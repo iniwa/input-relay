@@ -365,6 +365,12 @@
     font-size: 12px;
     border-radius: 50%;
   }
+  .preview-box .pv-face-btn {
+    min-width: 26px;
+    height: 26px;
+    font-size: 12px;
+    border-radius: 4px;
+  }
 
   /* Drag ghost */
   .drag-ghost {
@@ -1224,11 +1230,11 @@ function renderPreviewController(grid) {
     const maxRow = Math.max(...faceBtns.map(b => b.row || 0)) + 1;
     const btnGrid = document.createElement('div');
     btnGrid.className = 'pv-ctrl-buttons';
-    btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
-    btnGrid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+    btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 26px)`;
+    btnGrid.style.gridTemplateRows = `repeat(${maxRow}, 26px)`;
     faceBtns.forEach(b => {
       const el = document.createElement('div');
-      el.className = 'pv-key';
+      el.className = 'pv-key pv-face-btn';
       pvSetLabel(el, b.label);
       el.style.gridRow = (b.row || 0) + 1;
       pvApplyWidth(el, b);

@@ -334,18 +334,6 @@
         "label": "R1",
         "row": 1,
         "col": 4
-      },
-      {
-        "gamepad": "btn_6",
-        "label": "L2",
-        "row": 2,
-        "col": 3
-      },
-      {
-        "gamepad": "btn_7",
-        "label": "R2",
-        "row": 2,
-        "col": 4
       }
     ],
     "l2Axis": 4,
@@ -359,7 +347,14 @@
         "row": 0,
         "col": 0
       }
-    }
+    },
+    "shoulderLeft": "btn_4",
+    "shoulderRight": "btn_5",
+    "centerButtons": [
+      "btn_6",
+      "btn_8",
+      "btn_7"
+    ]
   },
   "layout": {
     "keyDisplay": {

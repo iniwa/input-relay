@@ -138,6 +138,12 @@
     font-size: 12px;
     border-radius: 50%;
   }
+  .key-btn.face-btn {
+    min-width: 26px;
+    height: 26px;
+    font-size: 12px;
+    border-radius: 4px;
+  }
 
   /* L2/R2 analog bar */
   .trigger-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -511,11 +517,11 @@ function buildController(cfg) {
     const maxRow = Math.max(...faceBtns.map(b => b.row || 0)) + 1;
     const grid = document.createElement('div');
     grid.className = 'ctrl-buttons';
-    grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
-    grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+    grid.style.gridTemplateColumns = `repeat(${maxCol}, 26px)`;
+    grid.style.gridTemplateRows = `repeat(${maxRow}, 26px)`;
     faceBtns.forEach(b => {
       const el = document.createElement('div');
-      el.className = 'key-btn';
+      el.className = 'key-btn face-btn';
       setLabelContent(el, b.label);
       el.style.gridRow = (b.row || 0) + 1;
       applyWidth(el, b);
