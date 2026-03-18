@@ -33,10 +33,23 @@ def save_config(data):
     CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+_PRESET_TYPES = {"keyboard", "leverless", "controller"}
+
 def load_presets():
-    if PRESETS_PATH.exists():
-        return json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
-    return {}
+    empty = {"keyboard": {}, "leverless": {}, "controller": {}}
+    if not PRESETS_PATH.exists():
+        return empty
+    data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+    # Migrate old flat format: { "name": { keyboard, leverless, controller } }
+    if data and not all(k in _PRESET_TYPES for k in data.keys()):
+        migrated = {"keyboard": {}, "leverless": {}, "controller": {}}
+        for name, p in data.items():
+            for t in _PRESET_TYPES:
+                if t in p:
+                    migrated[t][name] = {t: p[t]}
+        save_presets(migrated)
+        return migrated
+    return data
 
 
 def save_presets(data):
@@ -123,11 +136,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/presets":
             try:
                 data = json.loads(body)
+                ptype = data.get("type", "keyboard")
+                name = data["name"]
                 presets = load_presets()
-                preset = {"keyboard": data.get("keyboard", {}), "leverless": data.get("leverless", {})}
-                if "controller" in data:
-                    preset["controller"] = data["controller"]
-                presets[data["name"]] = preset
+                if ptype not in presets:
+                    presets[ptype] = {}
+                presets[ptype][name] = {ptype: data[ptype]}
                 save_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:
@@ -174,8 +188,9 @@ class OverlayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/presets":
             try:
                 data = json.loads(body)
+                ptype = data.get("type", "keyboard")
                 presets = load_presets()
-                presets.pop(data["name"], None)
+                presets.get(ptype, {}).pop(data["name"], None)
                 save_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:

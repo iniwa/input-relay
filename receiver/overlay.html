@@ -269,12 +269,18 @@ document.addEventListener('mouseup', () => {
 
 function applyLayout() {
   const layout = config?.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16 };
-  const hi = layout.history || { x: 600, y: 16 };
-  document.getElementById('key-display').style.left = kd.x + 'px';
-  document.getElementById('key-display').style.top = kd.y + 'px';
-  document.getElementById('history').style.left = hi.x + 'px';
-  document.getElementById('history').style.top = hi.y + 'px';
+  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
+  const kdEl = document.getElementById('key-display');
+  kdEl.style.left            = kd.x + 'px';
+  kdEl.style.top             = kd.y + 'px';
+  kdEl.style.transform       = `scale(${kd.scale || 1})`;
+  kdEl.style.transformOrigin = 'top left';
+  const hiEl = document.getElementById('history');
+  hiEl.style.left            = hi.x + 'px';
+  hiEl.style.top             = hi.y + 'px';
+  hiEl.style.transform       = `scale(${hi.scale || 1})`;
+  hiEl.style.transformOrigin = 'top left';
 }
 
 // --- Numpad notation ---

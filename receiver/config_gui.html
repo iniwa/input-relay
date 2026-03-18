@@ -211,7 +211,6 @@
   .preview-box .pv-panel {
     position: absolute;
     cursor: move;
-    transform: scale(0.375);
     transform-origin: top left;
   }
   .preview-box .pv-panel.dragging { opacity: 0.7; }
@@ -673,9 +672,12 @@
   <div class="layout-inputs">
     <label>キー表示 X:</label><input type="number" id="layout-kd-x" value="16" onchange="onLayoutInputChange()">
     <label>Y:</label><input type="number" id="layout-kd-y" value="16" onchange="onLayoutInputChange()">
+    <label style="margin-left:8px">倍率:</label><input type="number" id="layout-kd-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:60px">
     <span class="sep">|</span>
     <label>履歴 X:</label><input type="number" id="layout-hi-x" value="600" onchange="onLayoutInputChange()">
     <label>Y:</label><input type="number" id="layout-hi-y" value="16" onchange="onLayoutInputChange()">
+    <label style="margin-left:8px">倍率:</label><input type="number" id="layout-hi-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:60px">
+    <button class="btn-save" onclick="saveOverlayConfig()" style="margin-left:16px">保存</button>
   </div>
 </div>
 
@@ -780,10 +782,12 @@ document.addEventListener('mouseup', (e) => {
     pvPanelDragState.el.classList.remove('dragging');
     const key = pvPanelDragState.key;
     if (!overlayConfig.layout) overlayConfig.layout = {};
-    const scale = 960 / 2560;  // 0.375
+    const pvScale = 960 / 2560;  // 0.375
+    const prevScale = overlayConfig.layout?.[key]?.scale ?? 1;
     overlayConfig.layout[key] = {
-      x: Math.round(pvPanelDragState.el.offsetLeft / scale),
-      y: Math.round(pvPanelDragState.el.offsetTop  / scale),
+      x:     Math.round(pvPanelDragState.el.offsetLeft / pvScale),
+      y:     Math.round(pvPanelDragState.el.offsetTop  / pvScale),
+      scale: prevScale,
     };
     updateLayoutInputs();
     pvPanelDragState = null;
@@ -942,37 +946,43 @@ function setPreviewMode(mode) {
 }
 
 function applyPvLayout() {
-  const scale = 960 / 2560;  // 0.375 (3/8)
+  const pvScale = 960 / 2560;  // 0.375 (3/8)
   const layout = overlayConfig.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16 };
-  const hi = layout.history || { x: 600, y: 16 };
+  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
   const grid = document.getElementById('pv-grid');
   const hist = document.getElementById('pv-history');
-  grid.style.left = (kd.x * scale) + 'px';
-  grid.style.top  = (kd.y * scale) + 'px';
-  hist.style.left = (hi.x * scale) + 'px';
-  hist.style.top  = (hi.y * scale) + 'px';
+  grid.style.left      = (kd.x * pvScale) + 'px';
+  grid.style.top       = (kd.y * pvScale) + 'px';
+  grid.style.transform = `scale(${pvScale * (kd.scale || 1)})`;
+  hist.style.left      = (hi.x * pvScale) + 'px';
+  hist.style.top       = (hi.y * pvScale) + 'px';
+  hist.style.transform = `scale(${pvScale * (hi.scale || 1)})`;
 }
 
 function updateLayoutInputs() {
   const layout = overlayConfig.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16 };
-  const hi = layout.history || { x: 600, y: 16 };
-  document.getElementById('layout-kd-x').value = kd.x;
-  document.getElementById('layout-kd-y').value = kd.y;
-  document.getElementById('layout-hi-x').value = hi.x;
-  document.getElementById('layout-hi-y').value = hi.y;
+  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
+  document.getElementById('layout-kd-x').value     = kd.x;
+  document.getElementById('layout-kd-y').value     = kd.y;
+  document.getElementById('layout-kd-scale').value = kd.scale ?? 1;
+  document.getElementById('layout-hi-x').value     = hi.x;
+  document.getElementById('layout-hi-y').value     = hi.y;
+  document.getElementById('layout-hi-scale').value = hi.scale ?? 1;
 }
 
 function onLayoutInputChange() {
   if (!overlayConfig.layout) overlayConfig.layout = {};
   overlayConfig.layout.keyDisplay = {
-    x: +document.getElementById('layout-kd-x').value,
-    y: +document.getElementById('layout-kd-y').value,
+    x:     +document.getElementById('layout-kd-x').value,
+    y:     +document.getElementById('layout-kd-y').value,
+    scale: +document.getElementById('layout-kd-scale').value,
   };
   overlayConfig.layout.history = {
-    x: +document.getElementById('layout-hi-x').value,
-    y: +document.getElementById('layout-hi-y').value,
+    x:     +document.getElementById('layout-hi-x').value,
+    y:     +document.getElementById('layout-hi-y').value,
+    scale: +document.getElementById('layout-hi-scale').value,
   };
   applyPvLayout();
 }
@@ -1122,7 +1132,7 @@ function renderPreviewController(grid) {
 
   const l2Wrap = document.createElement('div');
   l2Wrap.className = 'pv-trigger-wrap';
-  l2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div><div class="pv-trigger-label">LT</div>';
+  l2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div>';
   topRow.appendChild(l2Wrap);
 
   if (lbDef) {
@@ -1151,7 +1161,7 @@ function renderPreviewController(grid) {
 
   const r2Wrap = document.createElement('div');
   r2Wrap.className = 'pv-trigger-wrap';
-  r2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div><div class="pv-trigger-label">RT</div>';
+  r2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div>';
   topRow.appendChild(r2Wrap);
   grid.appendChild(topRow);
 
@@ -1169,11 +1179,7 @@ function renderPreviewController(grid) {
   const lArea = document.createElement('div');
   lArea.className = 'pv-stick-area';
   lArea.innerHTML = '<div class="pv-stick-dot"></div>';
-  const lLabel = document.createElement('div');
-  lLabel.className = 'pv-stick-label';
-  lLabel.textContent = 'L';
   lWrap.appendChild(lArea);
-  lWrap.appendChild(lLabel);
   leftCluster.appendChild(lWrap);
 
   // D-pad
@@ -1206,11 +1212,7 @@ function renderPreviewController(grid) {
       }
     }
   }
-  const dpadLabel = document.createElement('div');
-  dpadLabel.className = 'pv-stick-label';
-  dpadLabel.textContent = 'D-Pad';
   dpadWrap.appendChild(dpad);
-  dpadWrap.appendChild(dpadLabel);
   leftCluster.appendChild(dpadWrap);
   mainRow.appendChild(leftCluster);
 
@@ -1264,11 +1266,7 @@ function renderPreviewController(grid) {
     const rArea = document.createElement('div');
     rArea.className = 'pv-stick-area';
     rArea.innerHTML = '<div class="pv-stick-dot"></div>';
-    const rLabel = document.createElement('div');
-    rLabel.className = 'pv-stick-label';
-    rLabel.textContent = 'R';
     rWrap.appendChild(rArea);
-    rWrap.appendChild(rLabel);
     rightCluster.appendChild(rWrap);
   }
 
@@ -1565,12 +1563,14 @@ async function saveOverlayConfig() {
   // Sync layout from inputs
   if (!overlayConfig.layout) overlayConfig.layout = {};
   overlayConfig.layout.keyDisplay = {
-    x: +document.getElementById('layout-kd-x').value,
-    y: +document.getElementById('layout-kd-y').value,
+    x:     +document.getElementById('layout-kd-x').value,
+    y:     +document.getElementById('layout-kd-y').value,
+    scale: +document.getElementById('layout-kd-scale').value,
   };
   overlayConfig.layout.history = {
-    x: +document.getElementById('layout-hi-x').value,
-    y: +document.getElementById('layout-hi-y').value,
+    x:     +document.getElementById('layout-hi-x').value,
+    y:     +document.getElementById('layout-hi-y').value,
+    scale: +document.getElementById('layout-hi-scale').value,
   };
 
   overlayConfig.inputHistory = {
@@ -1631,21 +1631,25 @@ async function saveSenderConfig() {
 }
 
 // ===== Presets =====
-let presetsData = {};
+let presetsData = { keyboard: {}, leverless: {}, controller: {} };
 
-function getPresetSelectors() {
-  return [
-    document.getElementById('preset-select'),
-    document.getElementById('preset-select-lv'),
-    document.getElementById('preset-select-ctrl'),
-  ];
+function getTabType(tab) {
+  if (tab === 'lv')   return 'leverless';
+  if (tab === 'ctrl') return 'controller';
+  return 'keyboard';
 }
 
 function renderPresetSelect() {
-  getPresetSelectors().forEach(sel => {
+  const mapping = [
+    ['preset-select',      'keyboard'],
+    ['preset-select-lv',   'leverless'],
+    ['preset-select-ctrl', 'controller'],
+  ];
+  mapping.forEach(([selId, type]) => {
+    const sel = document.getElementById(selId);
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- 選択 --</option>';
-    Object.keys(presetsData).sort().forEach(name => {
+    Object.keys(presetsData[type] || {}).sort().forEach(name => {
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
@@ -1678,7 +1682,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function fetchPresets() {
   const res = await fetch('/api/presets');
-  presetsData = await res.json();
+  const data = await res.json();
+  presetsData = { keyboard: data.keyboard || {}, leverless: data.leverless || {}, controller: data.controller || {} };
   renderPresetSelect();
 }
 
@@ -1697,27 +1702,25 @@ function getPresetNameInputForTab(tab) {
 function loadPreset(tab) {
   const sel = getPresetSelectForTab(tab);
   const name = sel.value;
-  if (!name || !presetsData[name]) return;
-  const p = presetsData[name];
-  if (p.keyboard) overlayConfig.keyboard = JSON.parse(JSON.stringify(p.keyboard));
-  if (p.leverless) overlayConfig.leverless = JSON.parse(JSON.stringify(p.leverless));
+  const type = getTabType(tab);
+  if (!name || !presetsData[type]?.[name]) return;
+  const p = presetsData[type][name];
+  if (p.keyboard)   overlayConfig.keyboard   = JSON.parse(JSON.stringify(p.keyboard));
+  if (p.leverless)  overlayConfig.leverless  = JSON.parse(JSON.stringify(p.leverless));
   if (p.controller) overlayConfig.controller = JSON.parse(JSON.stringify(p.controller));
-  renderKbKeys();
-  renderLeverless();
-  renderControllerTab();
+  if (type === 'keyboard')   renderKbKeys();
+  if (type === 'leverless')  renderLeverless();
+  if (type === 'controller') renderControllerTab();
   showStatus(`プリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
 }
 
-async function savePresetData(name) {
+async function savePresetData(name, tab) {
+  const type = getTabType(tab);
+  const payload = { name, type, [type]: overlayConfig[type] || {} };
   const res = await fetch('/api/presets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      keyboard: overlayConfig.keyboard || {},
-      leverless: overlayConfig.leverless || {},
-      controller: overlayConfig.controller || {},
-    }),
+    body: JSON.stringify(payload),
   });
   return res.json();
 }
@@ -1726,11 +1729,12 @@ async function savePreset(tab) {
   const nameInput = getPresetNameInputForTab(tab);
   const name = nameInput.value.trim();
   if (!name) { showStatus('プリセット名を入力してください', false); return; }
-  const data = await savePresetData(name);
+  const data = await savePresetData(name, tab);
   if (data.ok) {
-    presetsData[name] = { keyboard: overlayConfig.keyboard, leverless: overlayConfig.leverless, controller: overlayConfig.controller };
+    const type = getTabType(tab);
+    presetsData[type][name] = { [type]: overlayConfig[type] };
     renderPresetSelect();
-    getPresetSelectors().forEach(s => { if ([...s.options].some(o => o.value === name)) s.value = name; });
+    getPresetSelectForTab(tab).value = name;
     nameInput.value = '';
     showStatus(`プリセット「${name}」を保存しました`, true);
   } else {
@@ -1743,9 +1747,10 @@ async function overwritePreset(tab) {
   const name = sel.value;
   if (!name) return;
   if (!confirm(`プリセット「${name}」を上書きしますか？`)) return;
-  const data = await savePresetData(name);
+  const data = await savePresetData(name, tab);
   if (data.ok) {
-    presetsData[name] = { keyboard: overlayConfig.keyboard, leverless: overlayConfig.leverless, controller: overlayConfig.controller };
+    const type = getTabType(tab);
+    presetsData[type][name] = { [type]: overlayConfig[type] };
     showStatus(`プリセット「${name}」を上書き保存しました`, true);
   } else {
     showStatus('エラー: ' + data.error, false);
@@ -1757,14 +1762,15 @@ async function deletePreset(tab) {
   const name = sel.value;
   if (!name) return;
   if (!confirm(`プリセット「${name}」を削除しますか？`)) return;
+  const type = getTabType(tab);
   const res = await fetch('/api/presets', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, type }),
   });
   const data = await res.json();
   if (data.ok) {
-    delete presetsData[name];
+    delete presetsData[type][name];
     renderPresetSelect();
     showStatus(`プリセット「${name}」を削除しました`, true);
   } else {
