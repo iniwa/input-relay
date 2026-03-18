@@ -97,6 +97,8 @@
 const WS_PORT = location.port || '8765';
 const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
 
+const NEUTRAL = 'Ⓝ';
+
 let config = null;
 let mode = 'keyboard'; // 'keyboard' or 'leverless'
 let pressedKeys = new Set();
@@ -104,8 +106,6 @@ let keyElements = {};
 
 // Input history state
 let historyEntries = [];
-let currentCombo = { directions: new Set(), buttons: [] };
-let comboTimer = null;
 let idleTimer = null;
 
 // Direction state for numpad notation
@@ -119,7 +119,7 @@ const gamepadDirKeys = {
   axis_0_neg: 'left', axis_0_pos: 'right', axis_1_neg: 'up', axis_1_pos: 'down'
 };
 
-// Button label lookup
+// Non-direction button label lookup (key/gamepad id → display label)
 let buttonLabels = {};
 
 function getNumpad() {
@@ -142,11 +142,12 @@ function buildKeyboard(cfg) {
   const display = document.getElementById('key-display');
   display.innerHTML = '';
   keyElements = {};
+  buttonLabels = {};
   const keys = cfg.keyboard.displayKeys;
   const maxCol = Math.max(...keys.map(k => k.col)) + 1;
   display.style.setProperty('--cols', maxCol);
 
-  // Create grid cells
+  const kbDirSet = new Set(Object.keys(dirKeys.keyboard));
   const grid = {};
   keys.forEach(k => { grid[`${k.row},${k.col}`] = k; });
 
@@ -161,6 +162,10 @@ function buildKeyboard(cfg) {
         el.style.gridColumn = c + 1;
         display.appendChild(el);
         keyElements[k.key] = el;
+        // Non-direction keys get a button label for history
+        if (!kbDirSet.has(k.key)) {
+          buttonLabels[k.key] = k.label;
+        }
       }
     }
   }
@@ -205,6 +210,12 @@ function buildLeverless(cfg) {
   });
 }
 
+function histCfg() {
+  // Returns inputHistory settings for current mode
+  const h = config?.inputHistory || {};
+  return h[mode] || h || {};
+}
+
 function buildLayout() {
   if (!config) return;
   if (mode === 'leverless') {
@@ -213,28 +224,66 @@ function buildLayout() {
     buildKeyboard(config);
   }
   document.getElementById('mode-label').textContent = mode.toUpperCase();
+  // Reset history on mode switch
+  pressedKeys.clear();
+  dirState = { left: false, right: false, up: false, down: false };
+  historyEntries = [];
+  const histEl = document.getElementById('history');
+  const max = histCfg().maxEntries ?? 10;
+  histEl.style.display = max === 0 ? 'none' : 'flex';
+  if (max > 0 && mode === 'leverless') {
+    // レバーレスモードの初期状態はⓃ
+    historyEntries = [NEUTRAL];
+    histEl.innerHTML = `<div class="history-entry">${NEUTRAL}</div>`;
+  } else {
+    historyEntries = [];
+    histEl.innerHTML = '';
+  }
 }
 
 function resetIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer);
-  const timeout = config?.inputHistory?.idleTimeoutMs || 3000;
+  const timeout = histCfg().idleTimeoutMs ?? 3000;
   idleTimer = setTimeout(() => {
-    // Mark all as fading
     document.querySelectorAll('.history-entry').forEach(el => el.classList.add('fading'));
   }, timeout);
 }
 
-function addHistoryEntry(dir, buttons) {
-  const arrow = getDirArrow(dir);
-  const btnStr = buttons.join('+');
-  let text = '';
-  if (arrow && btnStr) text = `${arrow}+${btnStr}`;
-  else if (arrow) text = arrow;
-  else if (btnStr) text = btnStr;
-  if (!text) return;
+// Build a string representing the current full input state
+function getCurrentStateText() {
+  const arrow = getDirArrow(getNumpad());
+
+  // Collect all pressed non-direction button labels (preserve insertion order)
+  const btns = [];
+  for (const key of pressedKeys) {
+    const label = buttonLabels[key];
+    if (label) btns.push(label);
+  }
+
+  // Ⓝ はレバーレスモードのみ表示（キーボードモードでは何も押していない時は記録しない）
+  if (!arrow && btns.length === 0) {
+    return mode === 'leverless' ? NEUTRAL : null;
+  }
+
+  const parts = [];
+  if (arrow) parts.push(arrow);
+  parts.push(...btns);
+  return parts.join('+');
+}
+
+function recordCurrentState() {
+  const max = histCfg().maxEntries ?? 10;
+  if (max === 0) return;
+
+  const text = getCurrentStateText();
+
+  // null = 記録しない（キーボードモードのニュートラル）
+  if (text === null) return;
+
+  // Skip duplicate consecutive entries
+  if (historyEntries.length > 0 && historyEntries[historyEntries.length - 1] === text) return;
 
   historyEntries.push(text);
-  const max = config?.inputHistory?.maxEntries || 10;
   if (historyEntries.length > max) historyEntries.shift();
 
   const histEl = document.getElementById('history');
@@ -245,7 +294,6 @@ function addHistoryEntry(dir, buttons) {
     div.textContent = entry;
     histEl.appendChild(div);
   });
-  // Scroll to bottom
   histEl.scrollTop = histEl.scrollHeight;
   resetIdleTimer();
 }
@@ -254,52 +302,20 @@ function handleInput(data) {
   const key = data.key;
   const isDown = data.type === 'key_down';
   const el = keyElements[key];
+  const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
+  const dirName = dMap[key];
 
   if (isDown) {
     pressedKeys.add(key);
     if (el) el.classList.add('active');
-
-    // Track directions
-    const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
-    const dir = dMap[key];
-    if (dir) {
-      dirState[dir] = true;
-    }
-
-    // Track button presses for history
-    const label = buttonLabels[key];
-    if (label) {
-      // Schedule combo flush
-      if (comboTimer) clearTimeout(comboTimer);
-      currentCombo.directions.add(getNumpad());
-      currentCombo.buttons.push(label);
-      comboTimer = setTimeout(() => {
-        // Pick the most "interesting" direction (furthest from 5)
-        const dirs = [...currentCombo.directions].filter(d => d !== '5');
-        const dir = dirs.length > 0 ? dirs[dirs.length - 1] : getNumpad();
-        addHistoryEntry(dir, currentCombo.buttons);
-        currentCombo = { directions: new Set(), buttons: [] };
-      }, 50);
-    } else if (dir) {
-      // Direction-only input for history
-      if (comboTimer) clearTimeout(comboTimer);
-      const np = getNumpad();
-      currentCombo.directions.add(np);
-      comboTimer = setTimeout(() => {
-        const dirs = [...currentCombo.directions].filter(d => d !== '5');
-        const dirVal = dirs.length > 0 ? dirs[dirs.length - 1] : np;
-        addHistoryEntry(dirVal, currentCombo.buttons);
-        currentCombo = { directions: new Set(), buttons: [] };
-      }, 50);
-    }
+    if (dirName) dirState[dirName] = true;
   } else {
     pressedKeys.delete(key);
     if (el) el.classList.remove('active');
-
-    const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
-    const dir = dMap[key];
-    if (dir) dirState[dir] = false;
+    if (dirName) dirState[dirName] = false;
   }
+
+  recordCurrentState();
 }
 
 // WebSocket connection

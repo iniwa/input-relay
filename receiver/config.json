@@ -1,45 +1,183 @@
 {
   "keyboard": {
     "displayKeys": [
-      {"key": "w", "label": "W", "row": 0, "col": 1},
-      {"key": "a", "label": "A", "row": 1, "col": 0},
-      {"key": "s", "label": "S", "row": 1, "col": 1},
-      {"key": "d", "label": "D", "row": 1, "col": 2},
-      {"key": "u", "label": "U", "row": 0, "col": 4},
-      {"key": "i", "label": "I", "row": 0, "col": 5},
-      {"key": "o", "label": "O", "row": 0, "col": 6},
-      {"key": "p", "label": "P", "row": 0, "col": 7},
-      {"key": "j", "label": "J", "row": 1, "col": 4},
-      {"key": "k", "label": "K", "row": 1, "col": 5},
-      {"key": "l", "label": "L", "row": 1, "col": 6},
-      {"key": ";", "label": ";", "row": 1, "col": 7}
+      {
+        "key": "w",
+        "label": "W",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "key": "a",
+        "label": "A",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "key": "s",
+        "label": "S",
+        "row": 1,
+        "col": 1
+      },
+      {
+        "key": "d",
+        "label": "D",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "key": "u",
+        "label": "U",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "key": "i",
+        "label": "I",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "key": "o",
+        "label": "O",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "key": "p",
+        "label": "P",
+        "row": 0,
+        "col": 7
+      },
+      {
+        "key": "j",
+        "label": "J",
+        "row": 1,
+        "col": 4
+      },
+      {
+        "key": "k",
+        "label": "K",
+        "row": 1,
+        "col": 5
+      },
+      {
+        "key": "l",
+        "label": "L",
+        "row": 1,
+        "col": 6
+      },
+      {
+        "key": ";",
+        "label": ";",
+        "row": 1,
+        "col": 7
+      }
     ]
   },
   "leverless": {
     "directions": [
-      {"key": "a", "gamepad": "hat_0_left",  "label": "←", "row": 1, "col": 0},
-      {"key": "s", "gamepad": "hat_0_down",  "label": "↓", "row": 1, "col": 1},
-      {"key": "d", "gamepad": "hat_0_right", "label": "→", "row": 1, "col": 2},
-      {"key": "w", "gamepad": "hat_0_up",    "label": "↑", "row": 0, "col": 3}
+      {
+        "key": "a",
+        "gamepad": "hat_0_left",
+        "label": "←",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "key": "s",
+        "gamepad": "hat_0_down",
+        "label": "↓",
+        "row": 1,
+        "col": 1
+      },
+      {
+        "key": "d",
+        "gamepad": "hat_0_right",
+        "label": "→",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "key": "w",
+        "gamepad": "hat_0_up",
+        "label": "↑",
+        "row": 0,
+        "col": 3
+      }
     ],
     "buttons": [
-      {"key": "u", "gamepad": "btn_0", "label": "LP", "row": 0, "col": 5},
-      {"key": "i", "gamepad": "btn_1", "label": "MP", "row": 0, "col": 6},
-      {"key": "o", "gamepad": "btn_2", "label": "HP", "row": 0, "col": 7},
-      {"key": "p", "gamepad": "btn_3", "label": "PP", "row": 0, "col": 8},
-      {"key": "j", "gamepad": "btn_4", "label": "LK", "row": 1, "col": 5},
-      {"key": "k", "gamepad": "btn_5", "label": "MK", "row": 1, "col": 6},
-      {"key": "l", "gamepad": "btn_6", "label": "HK", "row": 1, "col": 7},
-      {"key": ";", "gamepad": "btn_7", "label": "KK", "row": 1, "col": 8}
+      {
+        "key": "u",
+        "gamepad": "btn_0",
+        "label": "LP",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "key": "i",
+        "gamepad": "btn_1",
+        "label": "MP",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "key": "o",
+        "gamepad": "btn_2",
+        "label": "HP",
+        "row": 0,
+        "col": 7
+      },
+      {
+        "key": "p",
+        "gamepad": "btn_3",
+        "label": "PP",
+        "row": 0,
+        "col": 8
+      },
+      {
+        "key": "j",
+        "gamepad": "btn_4",
+        "label": "LK",
+        "row": 1,
+        "col": 5
+      },
+      {
+        "key": "k",
+        "gamepad": "btn_5",
+        "label": "MK",
+        "row": 1,
+        "col": 6
+      },
+      {
+        "key": "l",
+        "gamepad": "btn_6",
+        "label": "HK",
+        "row": 1,
+        "col": 7
+      },
+      {
+        "key": ";",
+        "gamepad": "btn_7",
+        "label": "KK",
+        "row": 1,
+        "col": 8
+      }
     ]
   },
   "inputHistory": {
-    "maxEntries": 10,
+    "maxEntries": 5,
     "idleTimeoutMs": 3000,
     "directionMap": {
+      "1": "↙",
+      "2": "↓",
+      "3": "↘",
+      "4": "←",
       "5": "",
-      "6": "→", "4": "←", "8": "↑", "2": "↓",
-      "3": "↘", "1": "↙", "9": "↗", "7": "↖"
+      "6": "→",
+      "7": "↖",
+      "8": "↑",
+      "9": "↗"
     }
   }
 }
