@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Input Display - 設定</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { color: #ffd700; margin-bottom: 8px; font-size: 22px; }
+  h2 { color: #64b4ff; margin: 20px 0 10px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .tab {
+    padding: 8px 16px;
+    background: #2a2a4a;
+    border: 1px solid #444;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 14px;
+  }
+  .tab.active { background: #3a3a6a; color: #ffd700; border-bottom-color: #3a3a6a; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .form-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .form-group label {
+    min-width: 140px;
+    font-size: 14px;
+    color: #aaa;
+  }
+  input[type="text"], input[type="number"] {
+    background: #2a2a4a;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 200px;
+  }
+  input:focus { outline: none; border-color: #64b4ff; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+  th { background: #2a2a4a; padding: 6px 8px; text-align: left; color: #aaa; }
+  td { padding: 4px 8px; border-bottom: 1px solid #333; }
+  td input {
+    background: #2a2a4a;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 3px 6px;
+    border-radius: 3px;
+    width: 80px;
+    font-size: 13px;
+  }
+  td input.narrow { width: 50px; }
+
+  .btn-row { margin: 12px 0; display: flex; gap: 8px; }
+  button {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  .btn-save { background: #ffd700; color: #000; }
+  .btn-save:hover { background: #ffed4a; }
+  .btn-add { background: #3a6a3a; color: #fff; font-size: 12px; padding: 4px 12px; }
+  .btn-del { background: #6a3a3a; color: #fff; font-size: 11px; padding: 2px 8px; }
+  .btn-secondary { background: #3a3a6a; color: #ccc; }
+
+  .status {
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 8px 0;
+    font-size: 13px;
+    display: none;
+  }
+  .status.ok { display: block; background: #1a4a1a; color: #4a4; }
+  .status.err { display: block; background: #4a1a1a; color: #f66; }
+  .hint { font-size: 12px; color: #666; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Input Display 設定</h1>
+
+<div class="tabs">
+  <div class="tab active" data-tab="sender">Sender (Main PC)</div>
+  <div class="tab" data-tab="keyboard">Keyboard レイアウト</div>
+  <div class="tab" data-tab="leverless">Leverless レイアウト</div>
+  <div class="tab" data-tab="history">入力履歴</div>
+</div>
+
+<div id="status" class="status"></div>
+
+<!-- Sender Config -->
+<div class="tab-content active" id="tab-sender">
+  <h2>接続設定</h2>
+  <div class="form-group">
+    <label>Sub PC IP</label>
+    <input type="text" id="sender-host" placeholder="192.168.1.100">
+  </div>
+  <div class="form-group">
+    <label>WebSocket ポート</label>
+    <input type="number" id="sender-port" value="8765">
+  </div>
+  <div class="form-group">
+    <label>モード切替キー</label>
+    <input type="text" id="sender-toggle" value="f12">
+  </div>
+  <p class="hint">※ Sender の設定変更後は Sender の再起動が必要です</p>
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveSenderConfig()">保存</button>
+  </div>
+</div>
+
+<!-- Keyboard Layout -->
+<div class="tab-content" id="tab-keyboard">
+  <h2>キーボード表示キー</h2>
+  <table>
+    <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <tbody id="kb-keys"></tbody>
+  </table>
+  <div class="btn-row">
+    <button class="btn-add" onclick="addKbKey()">+ キー追加</button>
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
+<!-- Leverless Layout -->
+<div class="tab-content" id="tab-leverless">
+  <h2>方向ボタン</h2>
+  <table>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <tbody id="lv-dirs"></tbody>
+  </table>
+  <div class="btn-row">
+    <button class="btn-add" onclick="addLvDir()">+ 方向追加</button>
+  </div>
+
+  <h2>アクションボタン</h2>
+  <table>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <tbody id="lv-btns"></tbody>
+  </table>
+  <div class="btn-row">
+    <button class="btn-add" onclick="addLvBtn()">+ ボタン追加</button>
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
+<!-- History -->
+<div class="tab-content" id="tab-history">
+  <h2>入力履歴設定</h2>
+  <div class="form-group">
+    <label>最大表示数</label>
+    <input type="number" id="hist-max" value="10">
+  </div>
+  <div class="form-group">
+    <label>アイドルタイムアウト (ms)</label>
+    <input type="number" id="hist-idle" value="3000">
+  </div>
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
+<script>
+let overlayConfig = {};
+let senderConfig = {};
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+function showStatus(msg, ok) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.className = 'status'; }, 3000);
+}
+
+// Render keyboard keys table
+function renderKbKeys() {
+  const tbody = document.getElementById('kb-keys');
+  const keys = overlayConfig.keyboard?.displayKeys || [];
+  tbody.innerHTML = keys.map((k, i) => `
+    <tr>
+      <td><input value="${k.key}" data-i="${i}" data-f="key"></td>
+      <td><input value="${k.label}" data-i="${i}" data-f="label"></td>
+      <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col"></td>
+      <td><button class="btn-del" onclick="delKbKey(${i})">✕</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const idx = +inp.dataset.i;
+      const field = inp.dataset.f;
+      let val = inp.value;
+      if (field === 'row' || field === 'col') val = +val;
+      overlayConfig.keyboard.displayKeys[idx][field] = val;
+    });
+  });
+}
+
+function addKbKey() {
+  if (!overlayConfig.keyboard) overlayConfig.keyboard = { displayKeys: [] };
+  overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0 });
+  renderKbKeys();
+}
+function delKbKey(i) {
+  overlayConfig.keyboard.displayKeys.splice(i, 1);
+  renderKbKeys();
+}
+
+// Render leverless tables
+function renderLeverless() {
+  renderLvTable('lv-dirs', overlayConfig.leverless?.directions || [], 'directions');
+  renderLvTable('lv-btns', overlayConfig.leverless?.buttons || [], 'buttons');
+}
+
+function renderLvTable(tbodyId, items, field) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = items.map((k, i) => `
+    <tr>
+      <td><input value="${k.key}" data-i="${i}" data-f="key" data-sec="${field}"></td>
+      <td><input value="${k.gamepad || ''}" data-i="${i}" data-f="gamepad" data-sec="${field}"></td>
+      <td><input value="${k.label}" data-i="${i}" data-f="label" data-sec="${field}"></td>
+      <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row" data-sec="${field}"></td>
+      <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col" data-sec="${field}"></td>
+      <td><button class="btn-del" onclick="delLv('${field}',${i})">✕</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const idx = +inp.dataset.i;
+      const f = inp.dataset.f;
+      const sec = inp.dataset.sec;
+      let val = inp.value;
+      if (f === 'row' || f === 'col') val = +val;
+      overlayConfig.leverless[sec][idx][f] = val;
+    });
+  });
+}
+
+function addLvDir() {
+  if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
+  overlayConfig.leverless.directions.push({ key: '', gamepad: '', label: '', row: 0, col: 0 });
+  renderLeverless();
+}
+function addLvBtn() {
+  if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
+  overlayConfig.leverless.buttons.push({ key: '', gamepad: '', label: '', row: 0, col: 0 });
+  renderLeverless();
+}
+function delLv(field, i) {
+  overlayConfig.leverless[field].splice(i, 1);
+  renderLeverless();
+}
+
+function renderHistory() {
+  const h = overlayConfig.inputHistory || {};
+  document.getElementById('hist-max').value = h.maxEntries || 10;
+  document.getElementById('hist-idle').value = h.idleTimeoutMs || 3000;
+}
+
+// Save overlay config
+async function saveOverlayConfig() {
+  overlayConfig.inputHistory = overlayConfig.inputHistory || {};
+  overlayConfig.inputHistory.maxEntries = +document.getElementById('hist-max').value;
+  overlayConfig.inputHistory.idleTimeoutMs = +document.getElementById('hist-idle').value;
+
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(overlayConfig),
+  });
+  const data = await res.json();
+  showStatus(data.ok ? '保存しました (オーバーレイをリロードしてください)' : 'エラー: ' + data.error, data.ok);
+}
+
+// Save sender config
+async function saveSenderConfig() {
+  const cfg = {
+    host: document.getElementById('sender-host').value,
+    port: +document.getElementById('sender-port').value,
+    toggleKey: document.getElementById('sender-toggle').value,
+  };
+  const res = await fetch('/api/sender-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  });
+  const data = await res.json();
+  showStatus(data.ok ? '保存しました (Sender を再起動してください)' : 'エラー: ' + data.error, data.ok);
+}
+
+// Load on init
+async function init() {
+  const [cfgRes, sndRes] = await Promise.all([
+    fetch('/api/config'),
+    fetch('/api/sender-config'),
+  ]);
+  overlayConfig = await cfgRes.json();
+  senderConfig = await sndRes.json();
+
+  document.getElementById('sender-host').value = senderConfig.host || '';
+  document.getElementById('sender-port').value = senderConfig.port || 8765;
+  document.getElementById('sender-toggle').value = senderConfig.toggleKey || 'f12';
+
+  renderKbKeys();
+  renderLeverless();
+  renderHistory();
+}
+
+init();
+</script>
+</body>
+</html>

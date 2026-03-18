@@ -1,0 +1,51 @@
+# Git 内部ファイル
+.git/
+
+# ログファイル
+*.log
+*.log.*
+logs/
+
+# 一時ファイル
+*.tmp
+*.temp
+tmp/
+temp/
+.cache/
+
+# バックアップファイル
+*.bak
+*.backup
+*.orig
+*~
+
+# ビルド成果物
+dist/
+build/
+out/
+
+# 言語別キャッシュ・依存関係
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+node_modules/
+.next/
+target/
+
+# エディタ・OS 生成ファイル
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# 機密情報
+.env
+.env.*
+*.pem
+*.key
+secrets/

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Input Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: 'Segoe UI', sans-serif;
+    color: #fff;
+    overflow: hidden;
+  }
+  #container {
+    display: flex;
+    gap: 24px;
+    padding: 16px;
+    align-items: flex-start;
+  }
+
+  /* Key grid */
+  #key-display {
+    display: grid;
+    gap: 4px;
+    grid-template-columns: repeat(var(--cols, 9), 56px);
+    grid-template-rows: repeat(2, 56px);
+  }
+  .key-btn {
+    width: 56px;
+    height: 56px;
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    background: rgba(0,0,0,0.4);
+    transition: background 0.05s, border-color 0.05s, transform 0.05s;
+  }
+  .key-btn.active {
+    background: rgba(255,220,50,0.85);
+    border-color: #ffd700;
+    color: #000;
+    transform: scale(1.05);
+  }
+  .key-btn.direction {
+    border-color: rgba(100,180,255,0.6);
+  }
+  .key-btn.direction.active {
+    background: rgba(100,180,255,0.85);
+    border-color: #64b4ff;
+    color: #000;
+  }
+
+  /* Separator between directions and buttons in leverless */
+  .key-spacer {
+    width: 20px;
+  }
+
+  /* Input history */
+  #history {
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  .history-entry {
+    background: rgba(0,0,0,0.5);
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.3s;
+  }
+  .history-entry.fading { opacity: 0.3; }
+
+  #mode-label {
+    position: fixed;
+    top: 4px;
+    right: 8px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+  }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="key-display"></div>
+  <div id="history"></div>
+</div>
+<div id="mode-label">KEYBOARD</div>
+
+<script>
+const WS_PORT = location.port || '8765';
+const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
+
+let config = null;
+let mode = 'keyboard'; // 'keyboard' or 'leverless'
+let pressedKeys = new Set();
+let keyElements = {};
+
+// Input history state
+let historyEntries = [];
+let currentCombo = { directions: new Set(), buttons: [] };
+let comboTimer = null;
+let idleTimer = null;
+
+// Direction state for numpad notation
+let dirState = { left: false, right: false, up: false, down: false };
+const dirKeys = {
+  keyboard: { a: 'left', d: 'right', w: 'up', s: 'down' },
+  leverless: { a: 'left', d: 'right', w: 'up', s: 'down' }
+};
+const gamepadDirKeys = {
+  hat_0_left: 'left', hat_0_right: 'right', hat_0_up: 'up', hat_0_down: 'down',
+  axis_0_neg: 'left', axis_0_pos: 'right', axis_1_neg: 'up', axis_1_pos: 'down'
+};
+
+// Button label lookup
+let buttonLabels = {};
+
+function getNumpad() {
+  const h = dirState.left ? -1 : dirState.right ? 1 : 0;
+  const v = dirState.down ? -1 : dirState.up ? 1 : 0;
+  const map = {
+    '0,0': '5', '1,0': '6', '-1,0': '4',
+    '0,1': '8', '0,-1': '2',
+    '1,1': '9', '-1,1': '7', '1,-1': '3', '-1,-1': '1'
+  };
+  return map[`${h},${v}`] || '5';
+}
+
+function getDirArrow(numpad) {
+  const arrows = { '1':'↙','2':'↓','3':'↘','4':'←','5':'','6':'→','7':'↖','8':'↑','9':'↗' };
+  return arrows[numpad] || '';
+}
+
+function buildKeyboard(cfg) {
+  const display = document.getElementById('key-display');
+  display.innerHTML = '';
+  keyElements = {};
+  const keys = cfg.keyboard.displayKeys;
+  const maxCol = Math.max(...keys.map(k => k.col)) + 1;
+  display.style.setProperty('--cols', maxCol);
+
+  // Create grid cells
+  const grid = {};
+  keys.forEach(k => { grid[`${k.row},${k.col}`] = k; });
+
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < maxCol; c++) {
+      const k = grid[`${r},${c}`];
+      if (k) {
+        const el = document.createElement('div');
+        el.className = 'key-btn';
+        el.textContent = k.label;
+        el.style.gridRow = r + 1;
+        el.style.gridColumn = c + 1;
+        display.appendChild(el);
+        keyElements[k.key] = el;
+      }
+    }
+  }
+}
+
+function buildLeverless(cfg) {
+  const display = document.getElementById('key-display');
+  display.innerHTML = '';
+  keyElements = {};
+  buttonLabels = {};
+
+  const dirs = cfg.leverless.directions;
+  const btns = cfg.leverless.buttons;
+  const all = [...dirs, ...btns];
+  const maxCol = Math.max(...all.map(k => k.col)) + 1;
+  display.style.setProperty('--cols', maxCol);
+
+  dirs.forEach(k => {
+    const el = document.createElement('div');
+    el.className = 'key-btn direction';
+    el.textContent = k.label;
+    el.style.gridRow = k.row + 1;
+    el.style.gridColumn = k.col + 1;
+    display.appendChild(el);
+    keyElements[k.key] = el;
+    if (k.gamepad) keyElements[k.gamepad] = el;
+  });
+
+  btns.forEach(k => {
+    const el = document.createElement('div');
+    el.className = 'key-btn';
+    el.textContent = k.label;
+    el.style.gridRow = k.row + 1;
+    el.style.gridColumn = k.col + 1;
+    display.appendChild(el);
+    keyElements[k.key] = el;
+    if (k.gamepad) {
+      keyElements[k.gamepad] = el;
+      buttonLabels[k.gamepad] = k.label;
+    }
+    buttonLabels[k.key] = k.label;
+  });
+}
+
+function buildLayout() {
+  if (!config) return;
+  if (mode === 'leverless') {
+    buildLeverless(config);
+  } else {
+    buildKeyboard(config);
+  }
+  document.getElementById('mode-label').textContent = mode.toUpperCase();
+}
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  const timeout = config?.inputHistory?.idleTimeoutMs || 3000;
+  idleTimer = setTimeout(() => {
+    // Mark all as fading
+    document.querySelectorAll('.history-entry').forEach(el => el.classList.add('fading'));
+  }, timeout);
+}
+
+function addHistoryEntry(dir, buttons) {
+  const arrow = getDirArrow(dir);
+  const btnStr = buttons.join('+');
+  let text = '';
+  if (arrow && btnStr) text = `${arrow}+${btnStr}`;
+  else if (arrow) text = arrow;
+  else if (btnStr) text = btnStr;
+  if (!text) return;
+
+  historyEntries.push(text);
+  const max = config?.inputHistory?.maxEntries || 10;
+  if (historyEntries.length > max) historyEntries.shift();
+
+  const histEl = document.getElementById('history');
+  histEl.innerHTML = '';
+  historyEntries.forEach(entry => {
+    const div = document.createElement('div');
+    div.className = 'history-entry';
+    div.textContent = entry;
+    histEl.appendChild(div);
+  });
+  // Scroll to bottom
+  histEl.scrollTop = histEl.scrollHeight;
+  resetIdleTimer();
+}
+
+function handleInput(data) {
+  const key = data.key;
+  const isDown = data.type === 'key_down';
+  const el = keyElements[key];
+
+  if (isDown) {
+    pressedKeys.add(key);
+    if (el) el.classList.add('active');
+
+    // Track directions
+    const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
+    const dir = dMap[key];
+    if (dir) {
+      dirState[dir] = true;
+    }
+
+    // Track button presses for history
+    const label = buttonLabels[key];
+    if (label) {
+      // Schedule combo flush
+      if (comboTimer) clearTimeout(comboTimer);
+      currentCombo.directions.add(getNumpad());
+      currentCombo.buttons.push(label);
+      comboTimer = setTimeout(() => {
+        // Pick the most "interesting" direction (furthest from 5)
+        const dirs = [...currentCombo.directions].filter(d => d !== '5');
+        const dir = dirs.length > 0 ? dirs[dirs.length - 1] : getNumpad();
+        addHistoryEntry(dir, currentCombo.buttons);
+        currentCombo = { directions: new Set(), buttons: [] };
+      }, 50);
+    } else if (dir) {
+      // Direction-only input for history
+      if (comboTimer) clearTimeout(comboTimer);
+      const np = getNumpad();
+      currentCombo.directions.add(np);
+      comboTimer = setTimeout(() => {
+        const dirs = [...currentCombo.directions].filter(d => d !== '5');
+        const dirVal = dirs.length > 0 ? dirs[dirs.length - 1] : np;
+        addHistoryEntry(dirVal, currentCombo.buttons);
+        currentCombo = { directions: new Set(), buttons: [] };
+      }, 50);
+    }
+  } else {
+    pressedKeys.delete(key);
+    if (el) el.classList.remove('active');
+
+    const dMap = data.source === 'gamepad' ? gamepadDirKeys : dirKeys[mode];
+    const dir = dMap[key];
+    if (dir) dirState[dir] = false;
+  }
+}
+
+// WebSocket connection
+function connect() {
+  const ws = new WebSocket(WS_URL);
+  ws.onopen = () => console.log('Connected to server');
+  ws.onclose = () => {
+    console.log('Disconnected, reconnecting...');
+    setTimeout(connect, 1000);
+  };
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'config') {
+      config = data.data;
+      buildLayout();
+    } else if (data.type === 'mode_switch') {
+      mode = data.key === 'gamepad' ? 'leverless' : 'keyboard';
+      pressedKeys.clear();
+      dirState = { left: false, right: false, up: false, down: false };
+      buildLayout();
+    } else {
+      handleInput(data);
+    }
+  };
+}
+
+connect();
+</script>
+</body>
+</html>

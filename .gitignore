@@ -1,0 +1,45 @@
+# ===== Claude Code =====
+# Claude Code がプロジェクト単位で生成する設定・メモリファイル
+.claude/
+
+# ===== Serena MCP =====
+# Serena がプロジェクト解析結果・インデックスを保存するディレクトリ
+.serena/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ===== AI/ML モデルファイル（大容量のため必ず除外） =====
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+models/
+weights/
+
+# ===== ログ・一時ファイル =====
+*.log
+*.tmp
+*.temp
+logs/
+tmp/
+
+# ===== 機密情報 =====
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# ===== OS / エディタ =====
+Thumbs.db
+.DS_Store
+*.swp
+.vscode/
+.idea/
