@@ -518,6 +518,13 @@
 
 <!-- History -->
 <div class="tab-content" id="tab-history">
+  <p class="hint" style="margin-bottom:12px">
+    <strong>別ブラウザソースで使う方法:</strong> OBSでキー表示と履歴を別々のソースにしたい場合、以下のURLを使ってください:<br>
+    ・キー表示のみ: <code>overlay.html?mode=input</code><br>
+    ・履歴のみ: <code>overlay.html?mode=history</code><br>
+    ※ デフォルト (<code>overlay.html</code>) は両方表示します。
+  </p>
+
   <h2>Keyboard モード</h2>
   <div class="form-group">
     <label>最大表示数</label>
@@ -527,6 +534,7 @@
   <div class="form-group">
     <label>アイドルタイムアウト (ms)</label>
     <input type="number" id="hist-kb-idle" value="3000" min="0">
+    <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
   </div>
 
   <h2>Leverless モード</h2>
@@ -538,6 +546,7 @@
   <div class="form-group">
     <label>アイドルタイムアウト (ms)</label>
     <input type="number" id="hist-lv-idle" value="3000" min="0">
+    <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
   </div>
 
   <h2>Controller モード</h2>
@@ -549,6 +558,7 @@
   <div class="form-group">
     <label>アイドルタイムアウト (ms)</label>
     <input type="number" id="hist-ct-idle" value="3000" min="0">
+    <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
   </div>
 
   <div class="btn-row">
@@ -566,6 +576,10 @@
       <button class="preview-mode-btn" data-mode="controller" onclick="setPreviewMode('controller')">Controller</button>
     </div>
     <button class="preview-mode-btn" id="edit-mode-btn" onclick="toggleEditMode()">レイアウト編集</button>
+    <span class="sep">|</span>
+    <button class="preview-mode-btn" onclick="switchOverlayMode('keyboard')">KB切替</button>
+    <button class="preview-mode-btn" onclick="switchOverlayMode('leverless')">LV切替</button>
+    <button class="preview-mode-btn" onclick="switchOverlayMode('controller')">CT切替</button>
   </div>
   <div class="preview-box" id="preview-box">
     <div class="pv-mode-label" id="pv-mode-label">KEYBOARD</div>
@@ -801,6 +815,22 @@ function applyOffset(section) {
     document.getElementById('ctrl-offset-col').value = 0;
     renderControllerTab();
     renderPreview();
+  }
+}
+
+// Switch overlay mode on actual overlay (via API)
+async function switchOverlayMode(mode) {
+  setPreviewMode(mode);
+  try {
+    const res = await fetch('/api/mode-switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const data = await res.json();
+    showStatus(data.ok ? `オーバーレイを ${mode.toUpperCase()} に切り替えました` : 'エラー: ' + data.error, data.ok);
+  } catch (e) {
+    showStatus('エラー: ' + e.message, false);
   }
 }
 

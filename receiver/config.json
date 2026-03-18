@@ -11,13 +11,13 @@
         "key": "a",
         "label": "A",
         "row": 2,
-        "col": 2
+        "col": 1
       },
       {
         "key": "s",
         "label": "S",
         "row": 2,
-        "col": 1
+        "col": 2
       },
       {
         "key": "d",
@@ -319,11 +319,23 @@
         "row": 1,
         "col": 4
       }
-    ]
+    ],
+    "l2Axis": 4,
+    "r2Axis": 5,
+    "stickPositions": {
+      "leftStick": {
+        "row": 0,
+        "col": 0
+      },
+      "rightStick": {
+        "row": 0,
+        "col": 0
+      }
+    }
   },
   "layout": {
     "keyDisplay": {
-      "x": 32,
+      "x": 34,
       "y": 24
     },
     "history": {

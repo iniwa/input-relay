@@ -5,6 +5,7 @@ Run on Sub PC.
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -15,6 +16,7 @@ import websockets
 browser_clients = set()
 _browser_lock = asyncio.Lock()
 sender_ws = None
+_ws_loop = None  # asyncio event loop, set in main()
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_PATH = OVERLAY_DIR / "config.json"
@@ -39,6 +41,16 @@ def load_presets():
 
 def save_presets(data):
     PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+async def broadcast_to_browsers(message):
+    async with _browser_lock:
+        clients = list(browser_clients)
+    if clients:
+        await asyncio.gather(
+            *[c.send(message) for c in clients],
+            return_exceptions=True,
+        )
 
 
 class OverlayHandler(BaseHTTPRequestHandler):
@@ -120,6 +132,25 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 sender_cfg_path = OVERLAY_DIR.parent / "sender" / "sender_config.json"
                 sender_cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
+        if parsed.path == "/api/mode-switch":
+            try:
+                data = json.loads(body)
+                mode = data.get("mode", "keyboard")
+                msg = json.dumps({
+                    "type": "mode_switch",
+                    "key": mode,
+                    "source": "system",
+                    "timestamp": time.time(),
+                })
+                if _ws_loop:
+                    asyncio.run_coroutine_threadsafe(
+                        broadcast_to_browsers(msg), _ws_loop
+                    )
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -217,6 +248,9 @@ async def ws_handler(ws):
 
 
 async def main(ws_port=8765, http_port=8080):
+    global _ws_loop
+    _ws_loop = asyncio.get_event_loop()
+
     http_thread = threading.Thread(
         target=start_http_server, args=(http_port,), daemon=True
     )

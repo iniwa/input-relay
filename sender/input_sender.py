@@ -39,13 +39,13 @@ TOGGLE_KEY = getattr(keyboard.Key, TOGGLE_KEY_NAME, keyboard.Key.f12)
 _MODIFIER_MAP = {
     keyboard.Key.shift: 'shift',
     keyboard.Key.shift_l: 'shift',
-    keyboard.Key.shift_r: 'shift_r',
+    keyboard.Key.shift_r: 'shift',
     keyboard.Key.ctrl: 'ctrl',
     keyboard.Key.ctrl_l: 'ctrl',
-    keyboard.Key.ctrl_r: 'ctrl_r',
+    keyboard.Key.ctrl_r: 'ctrl',
     keyboard.Key.alt: 'alt',
     keyboard.Key.alt_l: 'alt',
-    keyboard.Key.alt_r: 'alt_r',
+    keyboard.Key.alt_r: 'alt',
 }
 
 
@@ -70,6 +70,14 @@ def key_to_str(key):
     # Check modifier map first
     if key in _MODIFIER_MAP:
         return _MODIFIER_MAP[key]
+    # Use vk (virtual key code) to get modifier-independent key name
+    # This prevents Shift+1 becoming '!' or Ctrl+C becoming '\x03'
+    vk = getattr(key, 'vk', None)
+    if vk is not None:
+        if 0x30 <= vk <= 0x39:  # 0-9
+            return chr(vk)
+        if 0x41 <= vk <= 0x5A:  # A-Z
+            return chr(vk).lower()
     if hasattr(key, "char") and key.char is not None:
         return key.char.lower()
     if hasattr(key, "name"):
