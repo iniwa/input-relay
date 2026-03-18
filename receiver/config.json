@@ -302,49 +302,49 @@
       {
         "gamepad": "btn_0",
         "label": "□",
-        "row": 0,
+        "row": 1,
         "col": 0
       },
       {
         "gamepad": "btn_1",
         "label": "✕",
-        "row": 1,
+        "row": 2,
         "col": 1
       },
       {
         "gamepad": "btn_2",
         "label": "○",
-        "row": 0,
+        "row": 1,
         "col": 1
       },
       {
         "gamepad": "btn_3",
         "label": "△",
-        "row": 0,
+        "row": 1,
         "col": 2
       },
       {
         "gamepad": "btn_4",
         "label": "L1",
-        "row": 0,
+        "row": 1,
         "col": 3
       },
       {
         "gamepad": "btn_5",
         "label": "R1",
-        "row": 0,
+        "row": 1,
         "col": 4
       },
       {
         "gamepad": "btn_6",
         "label": "L2",
-        "row": 1,
+        "row": 2,
         "col": 3
       },
       {
         "gamepad": "btn_7",
         "label": "R2",
-        "row": 1,
+        "row": 2,
         "col": 4
       }
     ],
@@ -363,12 +363,12 @@
   },
   "layout": {
     "keyDisplay": {
-      "x": 34,
-      "y": 66
+      "x": 0,
+      "y": 0
     },
     "history": {
-      "x": 0,
-      "y": 6
+      "x": 730,
+      "y": 0
     }
   },
   "inputHistory": {

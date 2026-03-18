@@ -27,8 +27,7 @@
     gap: 4px;
   }
   #key-display.ctrl-layout {
-    display: grid;
-    grid-auto-flow: column;
+    display: flex;
     gap: 16px;
     align-items: center;
   }
@@ -347,19 +346,10 @@ function buildController(cfg) {
   axisState = {};
 
   const cc = cfg.controller || {};
-  const stickPos = cc.stickPositions || {};
-
-  // Default grid positions (row 1, columns 1-6)
-  const lsCol = (stickPos.leftStick?.col || 0) + 1;
-  const lsRow = (stickPos.leftStick?.row || 0) + 1;
-  const rsCol = (stickPos.rightStick?.col || 5) + 1;
-  const rsRow = (stickPos.rightStick?.row || 0) + 1;
 
   // Left stick
   const lWrap = document.createElement('div');
   lWrap.className = 'stick-wrap';
-  lWrap.style.gridRow = lsRow;
-  lWrap.style.gridColumn = lsCol;
   const lArea = document.createElement('div');
   lArea.className = 'stick-area';
   lArea.id = 'stick-left';
@@ -374,46 +364,8 @@ function buildController(cfg) {
   // L2 trigger bar
   const l2Wrap = document.createElement('div');
   l2Wrap.className = 'trigger-wrap';
-  l2Wrap.style.gridRow = 1;
-  l2Wrap.style.gridColumn = 2;
   l2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-l2" style="height:0"></div></div><div class="trigger-label">L2</div>';
   display.appendChild(l2Wrap);
-
-  // D-pad
-  const dpadWrap = document.createElement('div');
-  dpadWrap.className = 'stick-wrap';
-  dpadWrap.style.gridRow = 1;
-  dpadWrap.style.gridColumn = 3;
-  const dpad = document.createElement('div');
-  dpad.className = 'dpad-grid';
-  const hatBtns = [
-    { key: 'hat_0_up', label: '\u2191', r: 0, c: 1 },
-    { key: 'hat_0_left', label: '\u2190', r: 1, c: 0 },
-    { key: 'hat_0_right', label: '\u2192', r: 1, c: 2 },
-    { key: 'hat_0_down', label: '\u2193', r: 2, c: 1 },
-  ];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      const hb = hatBtns.find(b => b.r === r && b.c === c);
-      if (hb) {
-        const el = document.createElement('div');
-        el.className = 'dpad-btn';
-        el.textContent = hb.label;
-        dpad.appendChild(el);
-        keyElements[hb.key] = el;
-      } else {
-        const spacer = document.createElement('div');
-        spacer.className = 'dpad-cell';
-        dpad.appendChild(spacer);
-      }
-    }
-  }
-  const dpadLabel = document.createElement('div');
-  dpadLabel.className = 'stick-label';
-  dpadLabel.textContent = 'D-Pad';
-  dpadWrap.appendChild(dpad);
-  dpadWrap.appendChild(dpadLabel);
-  display.appendChild(dpadWrap);
 
   // Face buttons
   const btns = cc.buttons || [];
@@ -422,8 +374,6 @@ function buildController(cfg) {
     const maxRow = Math.max(...btns.map(b => b.row || 0)) + 1;
     const grid = document.createElement('div');
     grid.className = 'ctrl-buttons';
-    grid.style.gridRow = 1;
-    grid.style.gridColumn = 4;
     grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
     grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
     btns.forEach(b => {
@@ -444,8 +394,6 @@ function buildController(cfg) {
   // R2 trigger bar
   const r2Wrap = document.createElement('div');
   r2Wrap.className = 'trigger-wrap';
-  r2Wrap.style.gridRow = 1;
-  r2Wrap.style.gridColumn = 5;
   r2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-r2" style="height:0"></div></div><div class="trigger-label">R2</div>';
   display.appendChild(r2Wrap);
 
@@ -453,8 +401,6 @@ function buildController(cfg) {
   if (cc.rightStick) {
     const rWrap = document.createElement('div');
     rWrap.className = 'stick-wrap';
-    rWrap.style.gridRow = rsRow;
-    rWrap.style.gridColumn = rsCol;
     const rArea = document.createElement('div');
     rArea.className = 'stick-area';
     rArea.id = 'stick-right';

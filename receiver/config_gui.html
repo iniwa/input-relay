@@ -357,14 +357,19 @@
     <label>WebSocket ポート</label>
     <input type="number" id="sender-port" value="8765">
   </div>
-  <div class="form-group">
-    <label>モード切替キー</label>
-    <input type="text" id="sender-toggle" value="f12">
-  </div>
   <p class="hint">※ Sender の設定変更後は Sender の再起動が必要です</p>
   <div class="btn-row">
     <button class="btn-save" onclick="saveSenderConfig()">保存</button>
   </div>
+
+  <h2>オーバーレイ表示モード切替</h2>
+  <p class="hint">オーバーレイ (OBS ブラウザソース) の表示モードを切り替えます。</p>
+  <div class="btn-row" id="overlay-mode-btns">
+    <button class="btn-secondary" id="mode-btn-keyboard" onclick="switchOverlayMode('keyboard')">Keyboard</button>
+    <button class="btn-secondary" id="mode-btn-leverless" onclick="switchOverlayMode('leverless')">Leverless</button>
+    <button class="btn-secondary" id="mode-btn-controller" onclick="switchOverlayMode('controller')">Controller</button>
+  </div>
+  <div id="overlay-mode-status" style="font-size:13px;color:#aaa;margin-top:4px;"></div>
 </div>
 
 <!-- Keyboard Layout -->
@@ -478,9 +483,8 @@
     <select id="ctrl-dir-src" style="width:200px">
       <option value="leftStick">左スティック</option>
       <option value="rightStick">右スティック</option>
-      <option value="hat">D-Pad (Hat)</option>
     </select>
-    <span class="desc-text">方向入力に使うソースを選択: leftStick=左スティック, rightStick=右スティック, hat=十字キー(D-pad)</span>
+    <span class="desc-text">方向入力に使うソースを選択</span>
   </div>
   <div class="form-group">
     <label>L2 トリガー軸</label>
@@ -1055,43 +1059,6 @@ function renderPreviewController(grid) {
   lWrap.appendChild(lLabel);
   grid.appendChild(lWrap);
 
-  // D-pad
-  const dpadWrap = document.createElement('div');
-  dpadWrap.className = 'pv-stick-wrap';
-  const dpad = document.createElement('div');
-  dpad.className = 'pv-dpad-grid';
-  const hatBtns = [
-    { key: 'hat_0_up', label: '\u2191', r: 0, c: 1 },
-    { key: 'hat_0_left', label: '\u2190', r: 1, c: 0 },
-    { key: 'hat_0_right', label: '\u2192', r: 1, c: 2 },
-    { key: 'hat_0_down', label: '\u2193', r: 2, c: 1 },
-  ];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      const hb = hatBtns.find(b => b.r === r && b.c === c);
-      if (hb) {
-        const el = document.createElement('div');
-        el.className = 'pv-dpad-btn';
-        el.textContent = hb.label;
-        el.addEventListener('mousedown', () => { if (!editMode) pvSimPress(hb.key, el); });
-        el.addEventListener('mouseup', () => { if (!editMode) pvSimRelease(hb.key, el); });
-        el.addEventListener('mouseleave', () => { if (!editMode && pvPressed.has(hb.key)) pvSimRelease(hb.key, el); });
-        dpad.appendChild(el);
-        pvKeyEls[hb.key] = el;
-      } else {
-        const spacer = document.createElement('div');
-        spacer.className = 'pv-dpad-cell';
-        dpad.appendChild(spacer);
-      }
-    }
-  }
-  const dpadLabel = document.createElement('div');
-  dpadLabel.className = 'pv-stick-label';
-  dpadLabel.textContent = 'D-Pad';
-  dpadWrap.appendChild(dpad);
-  dpadWrap.appendChild(dpadLabel);
-  grid.appendChild(dpadWrap);
-
   // Face buttons
   if (btns.length > 0) {
     const maxCol = Math.max(...btns.map(b => (b.col || 0) + (b.width || 1)));
@@ -1463,11 +1430,29 @@ async function saveOverlayConfig() {
   showStatus(data.ok ? '保存しました (オーバーレイに反映しました)' : 'エラー: ' + data.error, data.ok);
 }
 
+async function switchOverlayMode(mode) {
+  const res = await fetch('/api/mode-switch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  const data = await res.json();
+  const status = document.getElementById('overlay-mode-status');
+  if (data.ok) {
+    status.textContent = `モード切替: ${mode}`;
+    ['keyboard', 'leverless', 'controller'].forEach(m => {
+      document.getElementById(`mode-btn-${m}`).style.background = m === mode ? '#ffd700' : '';
+      document.getElementById(`mode-btn-${m}`).style.color = m === mode ? '#000' : '';
+    });
+  } else {
+    status.textContent = 'エラー: ' + data.error;
+  }
+}
+
 async function saveSenderConfig() {
   const cfg = {
     host: document.getElementById('sender-host').value,
     port: +document.getElementById('sender-port').value,
-    toggleKey: document.getElementById('sender-toggle').value,
   };
   const res = await fetch('/api/sender-config', {
     method: 'POST',
@@ -1630,7 +1615,6 @@ async function init() {
 
   document.getElementById('sender-host').value = senderConfig.host || '';
   document.getElementById('sender-port').value = senderConfig.port || 8765;
-  document.getElementById('sender-toggle').value = senderConfig.toggleKey || 'f12';
 
   renderKbKeys();
   renderLeverless();

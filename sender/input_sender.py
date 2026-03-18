@@ -29,12 +29,6 @@ pressed_keys = set()
 _pressed_keys_lock = threading.Lock()
 _loop = None  # asyncio event loop, set in main()
 
-MODES = ['keyboard', 'leverless', 'controller']
-current_mode = 'keyboard'
-
-TOGGLE_KEY_NAME = config.get("toggleKey", "f12")
-TOGGLE_KEY = getattr(keyboard.Key, TOGGLE_KEY_NAME, keyboard.Key.f12)
-
 # Modifier key mapping: normalize left/right variants to base name
 _MODIFIER_MAP = {
     keyboard.Key.shift: 'shift',
@@ -102,14 +96,6 @@ event_queue = JsonQueue()
 
 
 def on_press(key):
-    global current_mode
-    if key == TOGGLE_KEY:
-        idx = (MODES.index(current_mode) + 1) % len(MODES)
-        current_mode = MODES[idx]
-        print(f"[Mode] Switched to {current_mode}")
-        event_queue.put(make_event("mode_switch", current_mode, "system"))
-        return
-
     key_str = key_to_str(key)
     with _pressed_keys_lock:
         if key_str not in pressed_keys:
@@ -228,7 +214,7 @@ async def sender(host, port):
         try:
             async with websockets.connect(uri) as ws:
                 ws_connection = ws
-                print(f"[Sender] Connected! ({TOGGLE_KEY_NAME.upper()} to cycle: keyboard -> leverless -> controller)")
+                print("[Sender] Connected!")
                 while running:
                     msg = await event_queue.get()
                     try:
@@ -262,7 +248,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    print(f"[Config] host={config['host']} port={config['port']} toggle={TOGGLE_KEY_NAME}")
+    print(f"[Config] host={config['host']} port={config['port']}")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
