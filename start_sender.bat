@@ -1,5 +1,13 @@
 @echo off
 chcp 65001 >nul
+
+:: Require admin (games run as admin; pynput hooks need equal or higher privilege)
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
+
 title Input Sender (Main PC)
 cd /d "%~dp0"
 
