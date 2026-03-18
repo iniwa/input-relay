@@ -626,12 +626,6 @@ function recordCurrentState() {
 }
 
 function handleInput(data) {
-  // Auto-switch to leverless when receiving gamepad events in keyboard mode
-  if (data.source === 'gamepad' && mode === 'keyboard') {
-    mode = 'leverless';
-    buildLayout();
-  }
-
   const key = data.key;
   const isDown = data.type === 'key_down';
   const el = keyElements[key];

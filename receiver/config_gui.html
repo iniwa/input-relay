@@ -434,6 +434,8 @@
   </table>
   <div class="btn-row">
     <button class="btn-add" onclick="addLvBtn()">+ ボタン追加</button>
+    <button class="btn-add" onclick="addLvTrigger('axis_4_pos','L2')">+ L2/LT (axis4)</button>
+    <button class="btn-add" onclick="addLvTrigger('axis_5_pos','R2')">+ R2/RT (axis5)</button>
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
   </div>
 </div>
@@ -1311,6 +1313,11 @@ function addLvDir() {
 function addLvBtn() {
   if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
   overlayConfig.leverless.buttons.push({ key: '', gamepad: '', label: '', row: 0, col: 0, width: 1 });
+  renderLeverless();
+}
+function addLvTrigger(gamepad, label) {
+  if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
+  overlayConfig.leverless.buttons.push({ key: '', gamepad, label, row: 0, col: 0, width: 1 });
   renderLeverless();
 }
 function delLv(field, i) {
