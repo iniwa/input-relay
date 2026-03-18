@@ -341,6 +341,7 @@
   <div class="tab" data-tab="leverless">Leverless レイアウト</div>
   <div class="tab" data-tab="controller">Controller レイアウト</div>
   <div class="tab" data-tab="history">入力履歴</div>
+  <div class="tab" data-tab="debug">デバッグ</div>
 </div>
 
 <div id="status" class="status"></div>
@@ -566,6 +567,20 @@
   </div>
 </div>
 
+<!-- Debug -->
+<div class="tab-content" id="tab-debug">
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <span id="debug-status" style="font-size:13px;color:#f66">未接続</span>
+    <button class="btn-secondary" onclick="connectDebug()">再接続</button>
+    <button class="btn-secondary" onclick="clearDebugLog()">ログクリア</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#aaa;cursor:pointer">
+      <input type="checkbox" id="debug-show-axis"> axis_update も表示
+    </label>
+  </div>
+  <div id="debug-pressed" style="font-size:15px;font-weight:bold;background:#1a2a1a;border:1px solid #3a4a3a;border-radius:6px;padding:10px 16px;margin-bottom:12px;color:#4f4;font-family:monospace;min-height:42px;">押下中: なし</div>
+  <div id="debug-log" style="font-family:monospace;background:#111;border:1px solid #333;border-radius:6px;padding:10px;height:420px;overflow-y:auto;font-size:13px;line-height:1.6;"></div>
+</div>
+
 <!-- Live Preview -->
 <div class="preview-section">
   <div class="preview-header">
@@ -628,6 +643,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'debug') connectDebug();
   });
 });
 
@@ -1617,6 +1633,69 @@ async function init() {
 }
 
 init();
+
+// ===== Debug =====
+let debugWs = null;
+let debugPressedKeys = new Set();
+
+function connectDebug() {
+  if (debugWs && debugWs.readyState < 2) return;
+  const port = senderConfig.port || 8765;
+  const url = `ws://${location.hostname}:${port}/browser`;
+  const statusEl = document.getElementById('debug-status');
+  statusEl.textContent = `接続中... (${url})`;
+  statusEl.style.color = '#fa4';
+  debugWs = new WebSocket(url);
+  debugWs.onopen = () => {
+    statusEl.textContent = `接続済み (${url})`;
+    statusEl.style.color = '#4a4';
+  };
+  debugWs.onclose = () => {
+    statusEl.textContent = '切断';
+    statusEl.style.color = '#f66';
+  };
+  debugWs.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'config') return;
+    if (data.type === 'axis_update' && !document.getElementById('debug-show-axis').checked) return;
+    appendDebugLog(data);
+    updateDebugPressed(data);
+  };
+}
+
+function appendDebugLog(data) {
+  const log = document.getElementById('debug-log');
+  const entry = document.createElement('div');
+  const ts = data.timestamp
+    ? new Date(data.timestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false })
+    : '--:--:--';
+  const colors = { key_down: '#4f4', key_up: '#f66', mode_switch: '#ff4', axis_update: '#88f' };
+  entry.style.color = colors[data.type] || '#ccc';
+  if (data.type === 'axis_update') {
+    entry.textContent = `[${ts}] axis_update | axis: ${data.axis} val: ${(data.value ?? 0).toFixed(3)}`;
+  } else {
+    entry.textContent = `[${ts}] ${data.type.padEnd(12)} | key: ${String(data.key).padEnd(16)} | src: ${data.source || '-'}`;
+  }
+  log.appendChild(entry);
+  while (log.children.length > 300) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateDebugPressed(data) {
+  if (data.type === 'key_down') debugPressedKeys.add(data.key);
+  else if (data.type === 'key_up') debugPressedKeys.delete(data.key);
+  else return;
+  const el = document.getElementById('debug-pressed');
+  el.textContent = debugPressedKeys.size > 0
+    ? '押下中: ' + [...debugPressedKeys].join('  |  ')
+    : '押下中: なし';
+}
+
+function clearDebugLog() {
+  document.getElementById('debug-log').innerHTML = '';
+  debugPressedKeys.clear();
+  document.getElementById('debug-pressed').textContent = '押下中: なし';
+}
 </script>
 </body>
 </html>
