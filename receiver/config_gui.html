@@ -10,7 +10,7 @@
     background: #1a1a2e;
     color: #e0e0e0;
     padding: 20px;
-    max-width: 900px;
+    max-width: 1100px;
     margin: 0 auto;
   }
   h1 { color: #ffd700; margin-bottom: 8px; font-size: 22px; }
@@ -99,6 +99,114 @@
   .status.ok { display: block; background: #1a4a1a; color: #4a4; }
   .status.err { display: block; background: #4a1a1a; color: #f66; }
   .hint { font-size: 12px; color: #666; margin-top: 4px; }
+
+  /* Preview */
+  .preview-section {
+    margin-top: 20px;
+  }
+  .preview-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .preview-header h2 { margin: 0; }
+  .preview-mode-toggle {
+    display: flex;
+    gap: 4px;
+  }
+  .preview-mode-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: #2a2a4a;
+    color: #aaa;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .preview-mode-btn.active {
+    background: #3a3a6a;
+    color: #ffd700;
+    border-color: #ffd700;
+  }
+  .preview-box {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+    min-height: 160px;
+    position: relative;
+  }
+  .preview-hint {
+    font-size: 11px;
+    color: #555;
+    margin-top: 6px;
+  }
+
+  /* Overlay styles (scoped inside preview) */
+  .preview-box .pv-container {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .preview-box .pv-grid {
+    display: grid;
+    gap: 4px;
+  }
+  .preview-box .pv-key {
+    width: 56px;
+    height: 56px;
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+    background: rgba(0,0,0,0.4);
+    transition: background 0.08s, border-color 0.08s, transform 0.08s;
+    cursor: pointer;
+    user-select: none;
+  }
+  .preview-box .pv-key:hover { border-color: rgba(255,255,255,0.8); }
+  .preview-box .pv-key.active {
+    background: rgba(255,220,50,0.85);
+    border-color: #ffd700;
+    color: #000;
+    transform: scale(1.05);
+  }
+  .preview-box .pv-key.direction {
+    border-color: rgba(100,180,255,0.6);
+  }
+  .preview-box .pv-key.direction:hover { border-color: rgba(100,180,255,0.9); }
+  .preview-box .pv-key.direction.active {
+    background: rgba(100,180,255,0.85);
+    border-color: #64b4ff;
+    color: #000;
+  }
+  .preview-box .pv-history {
+    width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff;
+  }
+  .preview-box .pv-history-entry {
+    background: rgba(0,0,0,0.5);
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .preview-box .pv-mode-label {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+  }
 </style>
 </head>
 <body>
@@ -119,7 +227,7 @@
   <h2>接続設定</h2>
   <div class="form-group">
     <label>Sub PC IP</label>
-    <input type="text" id="sender-host" placeholder="192.168.1.100">
+    <input type="text" id="sender-host" placeholder="192.168.1.211">
   </div>
   <div class="form-group">
     <label>WebSocket ポート</label>
@@ -186,9 +294,37 @@
   </div>
 </div>
 
+<!-- Live Preview -->
+<div class="preview-section">
+  <div class="preview-header">
+    <h2>プレビュー</h2>
+    <div class="preview-mode-toggle">
+      <button class="preview-mode-btn active" data-mode="keyboard" onclick="setPreviewMode('keyboard')">Keyboard</button>
+      <button class="preview-mode-btn" data-mode="leverless" onclick="setPreviewMode('leverless')">Leverless</button>
+    </div>
+  </div>
+  <div class="preview-box" id="preview-box">
+    <div class="pv-mode-label" id="pv-mode-label">KEYBOARD</div>
+    <div class="pv-container">
+      <div class="pv-grid" id="pv-grid"></div>
+      <div class="pv-history" id="pv-history"></div>
+    </div>
+  </div>
+  <p class="preview-hint">ボタンをクリックで押下テスト / キーボード入力でもテスト可能 (このページにフォーカス時)</p>
+</div>
+
 <script>
 let overlayConfig = {};
 let senderConfig = {};
+let previewMode = 'keyboard';
+let pvPressed = new Set();
+let pvKeyEls = {};
+let pvHistoryEntries = [];
+let pvDirState = { left: false, right: false, up: false, down: false };
+let pvButtonLabels = {};
+
+// Direction key mapping
+const pvDirKeys = { a: 'left', d: 'right', w: 'up', s: 'down' };
 
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
@@ -207,7 +343,160 @@ function showStatus(msg, ok) {
   setTimeout(() => { el.className = 'status'; }, 3000);
 }
 
-// Render keyboard keys table
+// ===== Preview =====
+function setPreviewMode(mode) {
+  previewMode = mode;
+  document.querySelectorAll('.preview-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  document.getElementById('pv-mode-label').textContent = mode.toUpperCase();
+  pvPressed.clear();
+  pvDirState = { left: false, right: false, up: false, down: false };
+  renderPreview();
+}
+
+function renderPreview() {
+  const grid = document.getElementById('pv-grid');
+  grid.innerHTML = '';
+  pvKeyEls = {};
+  pvButtonLabels = {};
+
+  if (previewMode === 'keyboard') {
+    renderPreviewKeyboard(grid);
+  } else {
+    renderPreviewLeverless(grid);
+  }
+}
+
+function renderPreviewKeyboard(grid) {
+  const keys = overlayConfig.keyboard?.displayKeys || [];
+  if (!keys.length) {
+    grid.innerHTML = '<div style="color:#555;font-size:13px">キーが設定されていません</div>';
+    return;
+  }
+  const maxCol = Math.max(...keys.map(k => k.col)) + 1;
+  const maxRow = Math.max(...keys.map(k => k.row)) + 1;
+  grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
+  grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+
+  keys.forEach(k => {
+    const el = document.createElement('div');
+    el.className = 'pv-key';
+    el.textContent = k.label;
+    el.style.gridRow = k.row + 1;
+    el.style.gridColumn = k.col + 1;
+    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
+    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
+    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    grid.appendChild(el);
+    pvKeyEls[k.key] = el;
+  });
+}
+
+function renderPreviewLeverless(grid) {
+  const dirs = overlayConfig.leverless?.directions || [];
+  const btns = overlayConfig.leverless?.buttons || [];
+  const all = [...dirs, ...btns];
+  if (!all.length) {
+    grid.innerHTML = '<div style="color:#555;font-size:13px">ボタンが設定されていません</div>';
+    return;
+  }
+  const maxCol = Math.max(...all.map(k => k.col)) + 1;
+  const maxRow = Math.max(...all.map(k => k.row)) + 1;
+  grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
+  grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
+
+  dirs.forEach(k => {
+    const el = document.createElement('div');
+    el.className = 'pv-key direction';
+    el.textContent = k.label;
+    el.style.gridRow = k.row + 1;
+    el.style.gridColumn = k.col + 1;
+    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
+    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
+    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    grid.appendChild(el);
+    pvKeyEls[k.key] = el;
+  });
+
+  btns.forEach(k => {
+    const el = document.createElement('div');
+    el.className = 'pv-key';
+    el.textContent = k.label;
+    el.style.gridRow = k.row + 1;
+    el.style.gridColumn = k.col + 1;
+    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
+    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
+    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    grid.appendChild(el);
+    pvKeyEls[k.key] = el;
+    pvButtonLabels[k.key] = k.label;
+  });
+}
+
+function pvSimPress(key, el) {
+  pvPressed.add(key);
+  el.classList.add('active');
+  if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = true;
+
+  // Add to history
+  const label = pvButtonLabels[key];
+  const dir = pvDirKeys[key];
+  if (label || dir) {
+    const np = pvGetNumpad();
+    const arrow = pvGetArrow(np);
+    let text = '';
+    if (label) text = arrow ? `${arrow}+${label}` : label;
+    else if (arrow) text = arrow;
+    if (text) pvAddHistory(text);
+  }
+}
+
+function pvSimRelease(key, el) {
+  pvPressed.delete(key);
+  el.classList.remove('active');
+  if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = false;
+}
+
+function pvGetNumpad() {
+  const h = pvDirState.left ? -1 : pvDirState.right ? 1 : 0;
+  const v = pvDirState.down ? -1 : pvDirState.up ? 1 : 0;
+  const map = { '0,0':'5','1,0':'6','-1,0':'4','0,1':'8','0,-1':'2','1,1':'9','-1,1':'7','1,-1':'3','-1,-1':'1' };
+  return map[`${h},${v}`] || '5';
+}
+
+function pvGetArrow(np) {
+  return { '1':'↙','2':'↓','3':'↘','4':'←','5':'','6':'→','7':'↖','8':'↑','9':'↗' }[np] || '';
+}
+
+function pvAddHistory(text) {
+  const max = overlayConfig.inputHistory?.maxEntries || 10;
+  pvHistoryEntries.push(text);
+  if (pvHistoryEntries.length > max) pvHistoryEntries.shift();
+  const hist = document.getElementById('pv-history');
+  hist.innerHTML = pvHistoryEntries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
+}
+
+// Keyboard input for preview
+document.addEventListener('keydown', (e) => {
+  // Don't capture if typing in an input field
+  if (e.target.tagName === 'INPUT') return;
+  const key = e.key.toLowerCase();
+  const el = pvKeyEls[key];
+  if (el && !pvPressed.has(key)) {
+    pvSimPress(key, el);
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const key = e.key.toLowerCase();
+  const el = pvKeyEls[key];
+  if (el) {
+    pvSimRelease(key, el);
+  }
+});
+
+// ===== Config editing =====
 function renderKbKeys() {
   const tbody = document.getElementById('kb-keys');
   const keys = overlayConfig.keyboard?.displayKeys || [];
@@ -227,8 +516,10 @@ function renderKbKeys() {
       let val = inp.value;
       if (field === 'row' || field === 'col') val = +val;
       overlayConfig.keyboard.displayKeys[idx][field] = val;
+      renderPreview();
     });
   });
+  renderPreview();
 }
 
 function addKbKey() {
@@ -241,10 +532,10 @@ function delKbKey(i) {
   renderKbKeys();
 }
 
-// Render leverless tables
 function renderLeverless() {
   renderLvTable('lv-dirs', overlayConfig.leverless?.directions || [], 'directions');
   renderLvTable('lv-btns', overlayConfig.leverless?.buttons || [], 'buttons');
+  renderPreview();
 }
 
 function renderLvTable(tbodyId, items, field) {
@@ -267,6 +558,7 @@ function renderLvTable(tbodyId, items, field) {
       let val = inp.value;
       if (f === 'row' || f === 'col') val = +val;
       overlayConfig.leverless[sec][idx][f] = val;
+      renderPreview();
     });
   });
 }
@@ -292,7 +584,6 @@ function renderHistory() {
   document.getElementById('hist-idle').value = h.idleTimeoutMs || 3000;
 }
 
-// Save overlay config
 async function saveOverlayConfig() {
   overlayConfig.inputHistory = overlayConfig.inputHistory || {};
   overlayConfig.inputHistory.maxEntries = +document.getElementById('hist-max').value;
@@ -307,7 +598,6 @@ async function saveOverlayConfig() {
   showStatus(data.ok ? '保存しました (オーバーレイをリロードしてください)' : 'エラー: ' + data.error, data.ok);
 }
 
-// Save sender config
 async function saveSenderConfig() {
   const cfg = {
     host: document.getElementById('sender-host').value,
@@ -323,7 +613,6 @@ async function saveSenderConfig() {
   showStatus(data.ok ? '保存しました (Sender を再起動してください)' : 'エラー: ' + data.error, data.ok);
 }
 
-// Load on init
 async function init() {
   const [cfgRes, sndRes] = await Promise.all([
     fetch('/api/config'),
@@ -339,6 +628,7 @@ async function init() {
   renderKbKeys();
   renderLeverless();
   renderHistory();
+  renderPreview();
 }
 
 init();

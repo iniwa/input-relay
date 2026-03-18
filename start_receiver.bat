@@ -8,15 +8,30 @@ echo   Input Receiver - Sub PC
 echo ==============================
 echo.
 
-echo [1/3] git fetch ...
+echo [0] Configuring firewall ...
+netsh advfirewall firewall show rule name="InputDisplay-WS" >nul 2>&1 || (
+    netsh advfirewall firewall add rule name="InputDisplay-WS" dir=in action=allow protocol=TCP localport=8765 >nul
+    echo     Added rule: port 8765 (WebSocket)
+)
+netsh advfirewall firewall show rule name="InputDisplay-HTTP" >nul 2>&1 || (
+    netsh advfirewall firewall add rule name="InputDisplay-HTTP" dir=in action=allow protocol=TCP localport=8080 >nul
+    echo     Added rule: port 8080 (HTTP)
+)
+echo.
+
+echo [1/4] git fetch ...
 git fetch
 echo.
 
-echo [2/3] git pull ...
+echo [2/4] git pull ...
 git pull
 echo.
 
-echo [3/3] Starting server ...
+echo [3/4] Installing dependencies ...
+pip install websockets >nul 2>&1
+echo.
+
+echo [4/4] Starting server ...
 echo.
 start http://localhost:8080/
 python receiver\input_server.py
