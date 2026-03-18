@@ -216,9 +216,34 @@
   }
   .preview-box .pv-grid.ctrl-layout {
     display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .preview-box .pv-ctrl-top-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .preview-box .pv-ctrl-top-spacer { flex: 1; }
+  .preview-box .pv-ctrl-main-row {
+    display: flex;
     gap: 16px;
     align-items: center;
   }
+  .preview-box .pv-shoulder-btn {
+    min-width: 44px;
+    height: 28px;
+    font-size: 12px;
+  }
+  .preview-box .pv-trigger-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .preview-box .pv-trigger-bar-bg {
+    width: 16px; height: 60px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px; position: relative; overflow: hidden;
+  }
+  .preview-box .pv-trigger-label { font-size: 10px; color: rgba(255,255,255,0.5); }
   .preview-box .pv-key {
     min-width: 56px;
     height: 56px;
@@ -494,20 +519,17 @@
     <label>R2 トリガー軸</label>
     <input type="number" id="ctrl-r2-axis" value="5" min="0" style="width:60px">
   </div>
+  <div class="form-group">
+    <label>LB ゲームパッドID</label>
+    <input type="text" id="ctrl-shoulder-l" value="btn_4" style="width:100px">
+    <span class="desc-text">上段左 (バンパー) のボタンID</span>
+  </div>
+  <div class="form-group">
+    <label>RB ゲームパッドID</label>
+    <input type="text" id="ctrl-shoulder-r" value="btn_5" style="width:100px">
+    <span class="desc-text">上段右 (バンパー) のボタンID</span>
+  </div>
 
-  <h2>スティック表示位置</h2>
-  <div class="form-group">
-    <label>左スティック 行</label>
-    <input type="number" id="ctrl-stick-l-row" value="0" step="0.1" style="width:60px">
-    <label style="min-width:auto">列</label>
-    <input type="number" id="ctrl-stick-l-col" value="0" step="0.1" style="width:60px">
-  </div>
-  <div class="form-group">
-    <label>右スティック 行</label>
-    <input type="number" id="ctrl-stick-r-row" value="0" step="0.1" style="width:60px">
-    <label style="min-width:auto">列</label>
-    <input type="number" id="ctrl-stick-r-col" value="0" step="0.1" style="width:60px">
-  </div>
 
   <h2>ボタン</h2>
   <div class="offset-bar">
@@ -1044,7 +1066,55 @@ function renderPreviewLeverless(grid) {
 function renderPreviewController(grid) {
   grid.classList.add('ctrl-layout');
   const cc = overlayConfig.controller || {};
-  const btns = cc.buttons || [];
+  const allBtns = cc.buttons || [];
+  const lbId = cc.shoulderLeft || 'btn_4';
+  const rbId = cc.shoulderRight || 'btn_5';
+  const lbDef = allBtns.find(b => b.gamepad === lbId);
+  const rbDef = allBtns.find(b => b.gamepad === rbId);
+  const faceBtns = allBtns.filter(b => b.gamepad !== lbId && b.gamepad !== rbId);
+
+  // --- Top row: LT | LB | spacer | RB | RT ---
+  const topRow = document.createElement('div');
+  topRow.className = 'pv-ctrl-top-row';
+
+  const l2Wrap = document.createElement('div');
+  l2Wrap.className = 'pv-trigger-wrap';
+  l2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div><div class="pv-trigger-label">LT</div>';
+  topRow.appendChild(l2Wrap);
+
+  if (lbDef) {
+    const el = document.createElement('div');
+    el.className = 'pv-key pv-shoulder-btn';
+    pvSetLabel(el, lbDef.label);
+    pvMakeButton(el, lbDef.gamepad, 'controller', 'buttons', allBtns.indexOf(lbDef));
+    topRow.appendChild(el);
+    pvKeyEls[lbDef.gamepad] = el;
+    pvButtonLabels[lbDef.gamepad] = lbDef.label;
+  }
+
+  const topSpacer = document.createElement('div');
+  topSpacer.className = 'pv-ctrl-top-spacer';
+  topRow.appendChild(topSpacer);
+
+  if (rbDef) {
+    const el = document.createElement('div');
+    el.className = 'pv-key pv-shoulder-btn';
+    pvSetLabel(el, rbDef.label);
+    pvMakeButton(el, rbDef.gamepad, 'controller', 'buttons', allBtns.indexOf(rbDef));
+    topRow.appendChild(el);
+    pvKeyEls[rbDef.gamepad] = el;
+    pvButtonLabels[rbDef.gamepad] = rbDef.label;
+  }
+
+  const r2Wrap = document.createElement('div');
+  r2Wrap.className = 'pv-trigger-wrap';
+  r2Wrap.innerHTML = '<div class="pv-trigger-bar-bg"></div><div class="pv-trigger-label">RT</div>';
+  topRow.appendChild(r2Wrap);
+  grid.appendChild(topRow);
+
+  // --- Main row: LS | D-pad | face buttons | RS ---
+  const mainRow = document.createElement('div');
+  mainRow.className = 'pv-ctrl-main-row';
 
   // Left stick
   const lWrap = document.createElement('div');
@@ -1057,29 +1127,66 @@ function renderPreviewController(grid) {
   lLabel.textContent = 'L';
   lWrap.appendChild(lArea);
   lWrap.appendChild(lLabel);
-  grid.appendChild(lWrap);
+  mainRow.appendChild(lWrap);
 
-  // Face buttons
-  if (btns.length > 0) {
-    const maxCol = Math.max(...btns.map(b => (b.col || 0) + (b.width || 1)));
-    const maxRow = Math.max(...btns.map(b => b.row || 0)) + 1;
+  // D-pad
+  const dpadWrap = document.createElement('div');
+  dpadWrap.className = 'pv-stick-wrap';
+  const dpad = document.createElement('div');
+  dpad.className = 'pv-dpad-grid';
+  const hatBtns = [
+    { key: 'hat_0_up',    label: '\u2191', r: 0, c: 1 },
+    { key: 'hat_0_left',  label: '\u2190', r: 1, c: 0 },
+    { key: 'hat_0_right', label: '\u2192', r: 1, c: 2 },
+    { key: 'hat_0_down',  label: '\u2193', r: 2, c: 1 },
+  ];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const hb = hatBtns.find(b => b.r === r && b.c === c);
+      if (hb) {
+        const el = document.createElement('div');
+        el.className = 'pv-dpad-btn';
+        el.textContent = hb.label;
+        el.addEventListener('mousedown', () => { if (!editMode) pvSimPress(hb.key, el); });
+        el.addEventListener('mouseup',   () => { if (!editMode) pvSimRelease(hb.key, el); });
+        el.addEventListener('mouseleave',() => { if (!editMode && pvPressed.has(hb.key)) pvSimRelease(hb.key, el); });
+        dpad.appendChild(el);
+        pvKeyEls[hb.key] = el;
+      } else {
+        const sp = document.createElement('div');
+        sp.className = 'pv-dpad-cell';
+        dpad.appendChild(sp);
+      }
+    }
+  }
+  const dpadLabel = document.createElement('div');
+  dpadLabel.className = 'pv-stick-label';
+  dpadLabel.textContent = 'D-Pad';
+  dpadWrap.appendChild(dpad);
+  dpadWrap.appendChild(dpadLabel);
+  mainRow.appendChild(dpadWrap);
+
+  // Face buttons grid
+  if (faceBtns.length > 0) {
+    const maxCol = Math.max(...faceBtns.map(b => (b.col || 0) + (b.width || 1)));
+    const maxRow = Math.max(...faceBtns.map(b => b.row || 0)) + 1;
     const btnGrid = document.createElement('div');
     btnGrid.className = 'pv-ctrl-buttons';
     btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
     btnGrid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
-    btns.forEach((b, i) => {
+    faceBtns.forEach(b => {
       const el = document.createElement('div');
       el.className = 'pv-key';
       pvSetLabel(el, b.label);
       el.style.gridRow = (b.row || 0) + 1;
       pvApplyWidth(el, b);
       const id = b.gamepad || b.label;
-      pvMakeButton(el, id, 'controller', 'buttons', i);
+      pvMakeButton(el, id, 'controller', 'buttons', allBtns.indexOf(b));
       btnGrid.appendChild(el);
       pvKeyEls[id] = el;
       pvButtonLabels[id] = b.label;
     });
-    grid.appendChild(btnGrid);
+    mainRow.appendChild(btnGrid);
   }
 
   // Right stick
@@ -1094,8 +1201,10 @@ function renderPreviewController(grid) {
     rLabel.textContent = 'R';
     rWrap.appendChild(rArea);
     rWrap.appendChild(rLabel);
-    grid.appendChild(rWrap);
+    mainRow.appendChild(rWrap);
   }
+
+  grid.appendChild(mainRow);
 }
 
 function pvGetCurrentStateText() {
@@ -1303,12 +1412,8 @@ function renderControllerTab() {
   document.getElementById('ctrl-dir-src').value = cc.directionSource || 'leftStick';
   document.getElementById('ctrl-l2-axis').value = cc.l2Axis ?? 4;
   document.getElementById('ctrl-r2-axis').value = cc.r2Axis ?? 5;
-
-  const sp = cc.stickPositions || {};
-  document.getElementById('ctrl-stick-l-row').value = sp.leftStick?.row ?? 0;
-  document.getElementById('ctrl-stick-l-col').value = sp.leftStick?.col ?? 0;
-  document.getElementById('ctrl-stick-r-row').value = sp.rightStick?.row ?? 0;
-  document.getElementById('ctrl-stick-r-col').value = sp.rightStick?.col ?? 0;
+  document.getElementById('ctrl-shoulder-l').value = cc.shoulderLeft || 'btn_4';
+  document.getElementById('ctrl-shoulder-r').value = cc.shoulderRight || 'btn_5';
 
   const tbody = document.getElementById('ctrl-btns');
   const btns = cc.buttons || [];
@@ -1382,18 +1487,8 @@ async function saveOverlayConfig() {
   overlayConfig.controller.directionSource = document.getElementById('ctrl-dir-src').value;
   overlayConfig.controller.l2Axis = +document.getElementById('ctrl-l2-axis').value;
   overlayConfig.controller.r2Axis = +document.getElementById('ctrl-r2-axis').value;
-
-  // Stick positions
-  overlayConfig.controller.stickPositions = {
-    leftStick: {
-      row: parseFloat(document.getElementById('ctrl-stick-l-row').value) || 0,
-      col: parseFloat(document.getElementById('ctrl-stick-l-col').value) || 0,
-    },
-    rightStick: {
-      row: parseFloat(document.getElementById('ctrl-stick-r-row').value) || 0,
-      col: parseFloat(document.getElementById('ctrl-stick-r-col').value) || 0,
-    },
-  };
+  overlayConfig.controller.shoulderLeft  = document.getElementById('ctrl-shoulder-l').value;
+  overlayConfig.controller.shoulderRight = document.getElementById('ctrl-shoulder-r').value;
 
   // Sync layout from inputs
   if (!overlayConfig.layout) overlayConfig.layout = {};
