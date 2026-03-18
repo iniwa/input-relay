@@ -268,7 +268,7 @@
       "axisX": 2,
       "axisY": 3
     },
-    "deadzone": 0.15,
+    "deadzone": 0,
     "directionSource": "leftStick",
     "buttons": [
       {
@@ -323,7 +323,7 @@
   },
   "layout": {
     "keyDisplay": {
-      "x": 18,
+      "x": 32,
       "y": 24
     },
     "history": {
@@ -338,10 +338,10 @@
     },
     "leverless": {
       "maxEntries": 5,
-      "idleTimeoutMs": 3000
+      "idleTimeoutMs": 10
     },
     "controller": {
-      "maxEntries": 5,
+      "maxEntries": 0,
       "idleTimeoutMs": 3000
     }
   }
