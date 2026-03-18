@@ -327,6 +327,8 @@
 </div>
 
 <script>
+const PV_NEUTRAL = 'Ⓝ';
+
 let overlayConfig = {};
 let senderConfig = {};
 let previewMode = 'keyboard';
@@ -366,9 +368,15 @@ function setPreviewMode(mode) {
   pvPressed.clear();
   pvDirState = { left: false, right: false, up: false, down: false };
   pvHistoryEntries = [];
-  document.getElementById('pv-history').innerHTML = '';
+  const hist = document.getElementById('pv-history');
   const max = pvHistMax();
-  document.getElementById('pv-history').style.display = max === 0 ? 'none' : 'flex';
+  hist.style.display = max === 0 ? 'none' : 'flex';
+  if (max > 0 && mode === 'leverless') {
+    pvHistoryEntries = [PV_NEUTRAL];
+    hist.innerHTML = `<div class="pv-history-entry">${PV_NEUTRAL}</div>`;
+  } else {
+    hist.innerHTML = '';
+  }
   renderPreview();
 }
 
@@ -396,6 +404,7 @@ function renderPreviewKeyboard(grid) {
   grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
+  const kbDirSet = new Set(Object.keys(pvDirKeys));
   keys.forEach(k => {
     const el = document.createElement('div');
     el.className = 'pv-key';
@@ -407,6 +416,7 @@ function renderPreviewKeyboard(grid) {
     el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
     grid.appendChild(el);
     pvKeyEls[k.key] = el;
+    if (!kbDirSet.has(k.key)) pvButtonLabels[k.key] = k.label;
   });
 }
 
@@ -451,28 +461,41 @@ function renderPreviewLeverless(grid) {
   });
 }
 
+function pvGetCurrentStateText() {
+  const arrow = pvGetArrow(pvGetNumpad());
+  const btns = [];
+  for (const key of pvPressed) {
+    const label = pvButtonLabels[key];
+    if (label) btns.push(label);
+  }
+  if (!arrow && btns.length === 0) {
+    return previewMode === 'leverless' ? PV_NEUTRAL : null;
+  }
+  const parts = [];
+  if (arrow) parts.push(arrow);
+  parts.push(...btns);
+  return parts.join('+');
+}
+
+function pvRecordCurrentState() {
+  const text = pvGetCurrentStateText();
+  if (text === null) return;
+  if (pvHistoryEntries.length > 0 && pvHistoryEntries[pvHistoryEntries.length - 1] === text) return;
+  pvAddHistory(text);
+}
+
 function pvSimPress(key, el) {
   pvPressed.add(key);
   el.classList.add('active');
   if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = true;
-
-  // Add to history
-  const label = pvButtonLabels[key];
-  const dir = pvDirKeys[key];
-  if (label || dir) {
-    const np = pvGetNumpad();
-    const arrow = pvGetArrow(np);
-    let text = '';
-    if (label) text = arrow ? `${arrow}+${label}` : label;
-    else if (arrow) text = arrow;
-    if (text) pvAddHistory(text);
-  }
+  pvRecordCurrentState();
 }
 
 function pvSimRelease(key, el) {
   pvPressed.delete(key);
   el.classList.remove('active');
   if (pvDirKeys[key]) pvDirState[pvDirKeys[key]] = false;
+  pvRecordCurrentState();
 }
 
 function pvGetNumpad() {
@@ -499,6 +522,7 @@ function pvAddHistory(text) {
   const hist = document.getElementById('pv-history');
   hist.style.display = 'flex';
   hist.innerHTML = pvHistoryEntries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
+  hist.scrollTop = hist.scrollHeight;
 }
 
 // Keyboard input for preview
