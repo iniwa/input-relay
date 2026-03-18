@@ -520,9 +520,9 @@
 <div class="tab-content" id="tab-history">
   <p class="hint" style="margin-bottom:12px">
     <strong>別ブラウザソースで使う方法:</strong> OBSでキー表示と履歴を別々のソースにしたい場合、以下のURLを使ってください:<br>
-    ・キー表示のみ: <code>overlay.html?mode=input</code><br>
-    ・履歴のみ: <code>overlay.html?mode=history</code><br>
-    ※ デフォルト (<code>overlay.html</code>) は両方表示します。
+    ・キー表示のみ: <code>/input</code><br>
+    ・履歴のみ: <code>/history</code><br>
+    ※ デフォルト (<code>/overlay.html</code>) は両方表示します。
   </p>
 
   <h2>Keyboard モード</h2>
@@ -1435,7 +1435,7 @@ async function saveOverlayConfig() {
     body: JSON.stringify(overlayConfig),
   });
   const data = await res.json();
-  showStatus(data.ok ? '保存しました (オーバーレイをリロードしてください)' : 'エラー: ' + data.error, data.ok);
+  showStatus(data.ok ? '保存しました (オーバーレイに反映しました)' : 'エラー: ' + data.error, data.ok);
 }
 
 async function saveSenderConfig() {

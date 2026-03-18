@@ -104,8 +104,8 @@
         "col": 4
       },
       {
-        "key": " ",
-        "label": "",
+        "key": "space",
+        "label": "Space",
         "row": 4,
         "col": 4,
         "width": 3

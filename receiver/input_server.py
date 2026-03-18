@@ -65,6 +65,18 @@ class OverlayHandler(BaseHTTPRequestHandler):
             self._json_response(load_config())
             return
 
+        if path == "history":
+            self.send_response(302)
+            self.send_header("Location", "/overlay.html?mode=history")
+            self.end_headers()
+            return
+
+        if path == "input":
+            self.send_response(302)
+            self.send_header("Location", "/overlay.html?mode=input")
+            self.end_headers()
+            return
+
         if path == "api/presets":
             self._json_response(load_presets())
             return
@@ -108,6 +120,9 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 save_config(data)
+                if _ws_loop:
+                    msg = json.dumps({"type": "config", "data": data})
+                    asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
