@@ -188,94 +188,94 @@
         "key": "a",
         "gamepad": "hat_0_left",
         "label": "←",
-        "row": 1,
-        "col": 0
+        "row": 2,
+        "col": 2
       },
       {
         "key": "s",
         "gamepad": "hat_0_down",
         "label": "↓",
-        "row": 1,
-        "col": 1
+        "row": 2,
+        "col": 3
       },
       {
         "key": "d",
         "gamepad": "hat_0_right",
         "label": "→",
-        "row": 1,
-        "col": 2
+        "row": 2,
+        "col": 4
       },
       {
         "key": "w",
         "gamepad": "hat_0_up",
         "label": "↑",
-        "row": 2,
-        "col": 3
+        "row": 3,
+        "col": 5
       }
     ],
     "buttons": [
       {
         "key": "u",
-        "gamepad": "btn_0",
+        "gamepad": "btn_2",
         "label": "LP",
-        "row": 0,
-        "col": 5
+        "row": 1,
+        "col": 7
       },
       {
         "key": "i",
-        "gamepad": "btn_1",
+        "gamepad": "btn_3",
         "label": "MP",
-        "row": 0,
-        "col": 6
+        "row": 1,
+        "col": 8
       },
       {
         "key": "o",
-        "gamepad": "btn_2",
+        "gamepad": "btn_5",
         "label": "HP",
-        "row": 0,
-        "col": 7
+        "row": 1,
+        "col": 9
       },
       {
         "key": "p",
-        "gamepad": "btn_3",
+        "gamepad": "btn_4",
         "label": "HP+HK",
-        "row": 0,
-        "col": 8
+        "row": 1,
+        "col": 10
       },
       {
         "key": "j",
-        "gamepad": "btn_4",
+        "gamepad": "btn_0",
         "label": "LK",
-        "row": 1,
-        "col": 5
-      },
-      {
-        "key": "k",
-        "gamepad": "btn_5",
-        "label": "MK",
-        "row": 1,
-        "col": 6
-      },
-      {
-        "key": "l",
-        "gamepad": "btn_6",
-        "label": "HK",
-        "row": 1,
+        "row": 2,
         "col": 7
       },
       {
-        "key": ";",
-        "gamepad": "btn_7",
-        "label": "KK",
-        "row": 1,
+        "key": "k",
+        "gamepad": "btn_1",
+        "label": "MK",
+        "row": 2,
         "col": 8
+      },
+      {
+        "key": "l",
+        "gamepad": "btn_0",
+        "label": "HK",
+        "row": 2,
+        "col": 9
+      },
+      {
+        "key": ";",
+        "gamepad": "btn_0",
+        "label": "KK",
+        "row": 2,
+        "col": 10
       },
       {
         "key": "",
         "gamepad": "",
         "label": "MP+MK",
-        "row": 2,
-        "col": 4,
+        "row": 3,
+        "col": 6,
         "width": 1
       }
     ]
@@ -360,8 +360,8 @@
       "y": 24
     },
     "history": {
-      "x": 822,
-      "y": 94
+      "x": 0,
+      "y": 6
     }
   },
   "inputHistory": {
@@ -370,8 +370,8 @@
       "idleTimeoutMs": 3000
     },
     "leverless": {
-      "maxEntries": 5,
-      "idleTimeoutMs": 10
+      "maxEntries": 15,
+      "idleTimeoutMs": 3000
     },
     "controller": {
       "maxEntries": 0,
