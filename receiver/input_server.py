@@ -13,6 +13,7 @@ import urllib.parse
 import websockets
 
 browser_clients = set()
+_browser_lock = asyncio.Lock()
 sender_ws = None
 
 OVERLAY_DIR = Path(__file__).parent
@@ -163,15 +164,22 @@ def start_http_server(port):
 
 
 async def browser_handler(ws):
-    browser_clients.add(ws)
+    async with _browser_lock:
+        browser_clients.add(ws)
     print(f"[Browser] Client connected ({len(browser_clients)} total)")
     config = load_config()
-    await ws.send(json.dumps({"type": "config", "data": config}))
+    try:
+        await ws.send(json.dumps({"type": "config", "data": config}))
+    except websockets.ConnectionClosed:
+        async with _browser_lock:
+            browser_clients.discard(ws)
+        return
     try:
         async for msg in ws:
             pass
     finally:
-        browser_clients.discard(ws)
+        async with _browser_lock:
+            browser_clients.discard(ws)
         print(f"[Browser] Client disconnected ({len(browser_clients)} total)")
 
 
@@ -181,13 +189,16 @@ async def sender_handler(ws):
     print(f"[Sender] Connected from {ws.remote_address}")
     try:
         async for msg in ws:
-            if browser_clients:
+            async with _browser_lock:
+                clients = list(browser_clients)
+            if clients:
                 await asyncio.gather(
-                    *[client.send(msg) for client in browser_clients],
+                    *[client.send(msg) for client in clients],
                     return_exceptions=True,
                 )
     finally:
-        sender_ws = None
+        if sender_ws is ws:
+            sender_ws = None
         print("[Sender] Disconnected")
 
 

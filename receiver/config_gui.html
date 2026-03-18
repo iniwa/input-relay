@@ -83,7 +83,7 @@
   }
   td input.narrow { width: 50px; }
 
-  .btn-row { margin: 12px 0; display: flex; gap: 8px; }
+  .btn-row { margin: 12px 0; display: flex; gap: 8px; flex-wrap: wrap; }
   button {
     padding: 8px 20px;
     border: none;
@@ -97,15 +97,7 @@
   .btn-add { background: #3a6a3a; color: #fff; font-size: 12px; padding: 4px 12px; }
   .btn-del { background: #6a3a3a; color: #fff; font-size: 11px; padding: 2px 8px; }
   .btn-secondary { background: #3a3a6a; color: #ccc; }
-
-  /* Reorder buttons */
-  .reorder-btns { display: flex; flex-direction: column; gap: 1px; }
-  .reorder-btn {
-    background: #3a3a6a; color: #aaa; border: 1px solid #555;
-    border-radius: 3px; font-size: 10px; padding: 0 5px;
-    cursor: pointer; line-height: 16px;
-  }
-  .reorder-btn:hover { color: #fff; border-color: #64b4ff; }
+  .btn-offset { background: #4a4a2a; color: #fff; font-size: 12px; padding: 4px 12px; }
 
   .status {
     padding: 8px 12px;
@@ -117,6 +109,7 @@
   .status.ok { display: block; background: #1a4a1a; color: #4a4; }
   .status.err { display: block; background: #4a1a1a; color: #f66; }
   .hint { font-size: 12px; color: #666; margin-top: 4px; }
+  .desc-text { font-size: 12px; color: #888; margin-left: 4px; }
 
   /* Preset bar */
   .preset-bar {
@@ -138,6 +131,29 @@
   .btn-load { background: #3a5a8a; color: #fff; font-size: 12px; padding: 5px 12px; }
   .btn-preset-save { background: #3a6a3a; color: #fff; font-size: 12px; padding: 5px 12px; }
   .btn-preset-del { background: #6a3a3a; color: #fff; font-size: 12px; padding: 5px 10px; }
+  .btn-overwrite { background: #8a6a3a; color: #fff; font-size: 12px; padding: 5px 12px; }
+
+  /* Offset bar */
+  .offset-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-size: 13px;
+    color: #aaa;
+    flex-wrap: wrap;
+  }
+  .offset-bar label { font-size: 13px; color: #888; min-width: auto; }
+  .offset-bar input {
+    width: 60px; padding: 3px 6px; font-size: 13px;
+    background: #2a2a4a; border: 1px solid #555; color: #fff; border-radius: 3px;
+  }
+
+  /* Drag rows */
+  tr.dragging-row { opacity: 0.4; }
+  tr.drag-over { border-top: 2px solid #ffd700; }
+  tr { cursor: grab; }
+  tr:active { cursor: grabbing; }
 
   /* Preview */
   .preview-section { margin-top: 20px; }
@@ -218,6 +234,8 @@
     transition: background 0.08s, border-color 0.08s, transform 0.08s;
     cursor: pointer;
     user-select: none;
+    text-align: center;
+    line-height: 1.2;
   }
   .preview-box .pv-key:hover { border-color: rgba(255,255,255,0.8); }
   .preview-box .pv-key.active {
@@ -350,31 +368,56 @@
 
 <!-- Keyboard Layout -->
 <div class="tab-content" id="tab-keyboard">
-  <div class="preset-bar">
-    <span style="font-size:13px;color:#aaa;white-space:nowrap">レイアウトプリセット:</span>
+  <div class="preset-bar" id="preset-bar-keyboard">
+    <span style="font-size:13px;color:#aaa;white-space:nowrap">プリセット:</span>
     <select id="preset-select"><option value="">-- 選択 --</option></select>
     <button class="btn-load" onclick="loadPreset()">読み込み</button>
+    <button class="btn-overwrite" id="btn-overwrite" onclick="overwritePreset()" style="display:none">上書き保存</button>
     <button class="btn-preset-del" onclick="deletePreset()">削除</button>
     <span class="sep">|</span>
     <input type="text" id="preset-name-input" placeholder="プリセット名" style="width:150px;padding:5px 8px;font-size:13px">
-    <button class="btn-preset-save" onclick="savePreset()">現在の設定を保存</button>
+    <button class="btn-preset-save" onclick="savePreset()">新規保存</button>
   </div>
   <h2>キーボード表示キー</h2>
+  <p class="hint">行をドラッグ&ドロップで順序変更できます。ラベルに \n を入れると改行されます。</p>
+  <div class="offset-bar">
+    <label>行オフセット:</label><input type="number" id="kb-offset-row" value="0" step="0.1">
+    <label>列オフセット:</label><input type="number" id="kb-offset-col" value="0" step="0.1">
+    <button class="btn-offset" onclick="applyOffset('keyboard')">一括適用</button>
+  </div>
   <table>
-    <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th></th></tr></thead>
     <tbody id="kb-keys"></tbody>
   </table>
   <div class="btn-row">
     <button class="btn-add" onclick="addKbKey()">+ キー追加</button>
+    <button class="btn-add" onclick="addKbKey('mouse_left')">+ マウス左</button>
+    <button class="btn-add" onclick="addKbKey('mouse_right')">+ マウス右</button>
+    <button class="btn-add" onclick="addKbKey('mouse_middle')">+ マウス中</button>
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
   </div>
 </div>
 
 <!-- Leverless Layout -->
 <div class="tab-content" id="tab-leverless">
+  <div class="preset-bar" id="preset-bar-leverless">
+    <span style="font-size:13px;color:#aaa;white-space:nowrap">プリセット:</span>
+    <select id="preset-select-lv"><option value="">-- 選択 --</option></select>
+    <button class="btn-load" onclick="loadPreset('lv')">読み込み</button>
+    <button class="btn-overwrite" id="btn-overwrite-lv" onclick="overwritePreset('lv')" style="display:none">上書き保存</button>
+    <button class="btn-preset-del" onclick="deletePreset('lv')">削除</button>
+    <span class="sep">|</span>
+    <input type="text" id="preset-name-input-lv" placeholder="プリセット名" style="width:150px;padding:5px 8px;font-size:13px">
+    <button class="btn-preset-save" onclick="savePreset('lv')">新規保存</button>
+  </div>
   <h2>方向ボタン</h2>
+  <div class="offset-bar">
+    <label>行オフセット:</label><input type="number" id="lv-offset-row" value="0" step="0.1">
+    <label>列オフセット:</label><input type="number" id="lv-offset-col" value="0" step="0.1">
+    <button class="btn-offset" onclick="applyOffset('leverless')">一括適用</button>
+  </div>
   <table>
-    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th></th></tr></thead>
     <tbody id="lv-dirs"></tbody>
   </table>
   <div class="btn-row">
@@ -383,7 +426,7 @@
 
   <h2>アクションボタン</h2>
   <table>
-    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th></th></tr></thead>
     <tbody id="lv-btns"></tbody>
   </table>
   <div class="btn-row">
@@ -394,6 +437,16 @@
 
 <!-- Controller Layout -->
 <div class="tab-content" id="tab-controller">
+  <div class="preset-bar" id="preset-bar-controller">
+    <span style="font-size:13px;color:#aaa;white-space:nowrap">プリセット:</span>
+    <select id="preset-select-ctrl"><option value="">-- 選択 --</option></select>
+    <button class="btn-load" onclick="loadPreset('ctrl')">読み込み</button>
+    <button class="btn-overwrite" id="btn-overwrite-ctrl" onclick="overwritePreset('ctrl')" style="display:none">上書き保存</button>
+    <button class="btn-preset-del" onclick="deletePreset('ctrl')">削除</button>
+    <span class="sep">|</span>
+    <input type="text" id="preset-name-input-ctrl" placeholder="プリセット名" style="width:150px;padding:5px 8px;font-size:13px">
+    <button class="btn-preset-save" onclick="savePreset('ctrl')">新規保存</button>
+  </div>
   <h2>アナログスティック</h2>
   <div class="form-group">
     <label>左スティック X 軸</label>
@@ -422,11 +475,39 @@
       <option value="rightStick">右スティック</option>
       <option value="hat">D-Pad (Hat)</option>
     </select>
+    <span class="desc-text">方向入力に使うソースを選択: leftStick=左スティック, rightStick=右スティック, hat=十字キー(D-pad)</span>
+  </div>
+  <div class="form-group">
+    <label>L2 トリガー軸</label>
+    <input type="number" id="ctrl-l2-axis" value="4" min="0" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>R2 トリガー軸</label>
+    <input type="number" id="ctrl-r2-axis" value="5" min="0" style="width:60px">
+  </div>
+
+  <h2>スティック表示位置</h2>
+  <div class="form-group">
+    <label>左スティック 行</label>
+    <input type="number" id="ctrl-stick-l-row" value="0" step="0.1" style="width:60px">
+    <label style="min-width:auto">列</label>
+    <input type="number" id="ctrl-stick-l-col" value="0" step="0.1" style="width:60px">
+  </div>
+  <div class="form-group">
+    <label>右スティック 行</label>
+    <input type="number" id="ctrl-stick-r-row" value="0" step="0.1" style="width:60px">
+    <label style="min-width:auto">列</label>
+    <input type="number" id="ctrl-stick-r-col" value="0" step="0.1" style="width:60px">
   </div>
 
   <h2>ボタン</h2>
+  <div class="offset-bar">
+    <label>行オフセット:</label><input type="number" id="ctrl-offset-row" value="0" step="0.1">
+    <label>列オフセット:</label><input type="number" id="ctrl-offset-col" value="0" step="0.1">
+    <button class="btn-offset" onclick="applyOffset('controller')">一括適用</button>
+  </div>
   <table>
-    <thead><tr><th>Gamepad ID</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
+    <thead><tr><th>Gamepad ID</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th></th></tr></thead>
     <tbody id="ctrl-btns"></tbody>
   </table>
   <div class="btn-row">
@@ -502,7 +583,7 @@
 </div>
 
 <script>
-const PV_NEUTRAL = 'Ⓝ';
+const PV_NEUTRAL = '\u24C3';
 
 let overlayConfig = {};
 let senderConfig = {};
@@ -523,6 +604,9 @@ const pvHatDirKeys = {
 let pvPanelDragState = null;   // panel drag
 let pvBtnDragState = null;     // button drag (edit mode)
 
+// --- Table row drag state ---
+let rowDragState = null;
+
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -538,6 +622,15 @@ function showStatus(msg, ok) {
   el.textContent = msg;
   el.className = 'status ' + (ok ? 'ok' : 'err');
   setTimeout(() => { el.className = 'status'; }, 3000);
+}
+
+// --- Label rendering with \n support in preview ---
+function pvSetLabel(el, label) {
+  if (label && label.includes('\\n')) {
+    el.innerHTML = label.replace(/\\n/g, '<br>');
+  } else {
+    el.textContent = label;
+  }
 }
 
 // ===== Edit Mode =====
@@ -630,6 +723,87 @@ document.addEventListener('mouseup', (e) => {
   }
 });
 
+// ===== Table Row Drag & Drop =====
+function initRowDrag(tbody, getArray, setArray, renderFn) {
+  tbody.addEventListener('dragstart', (e) => {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    rowDragState = { tbody, tr, index: [...tbody.children].indexOf(tr), getArray, setArray, renderFn };
+    tr.classList.add('dragging-row');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  tbody.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const tr = e.target.closest('tr');
+    if (!tr || !rowDragState) return;
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    tr.classList.add('drag-over');
+  });
+  tbody.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!rowDragState) return;
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    const toIndex = [...tbody.children].indexOf(tr);
+    const fromIndex = rowDragState.index;
+    if (fromIndex !== toIndex) {
+      const arr = rowDragState.getArray();
+      const [item] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, item);
+      rowDragState.setArray(arr);
+      rowDragState.renderFn();
+    }
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+  });
+  tbody.addEventListener('dragend', () => {
+    if (rowDragState) {
+      rowDragState.tr.classList.remove('dragging-row');
+      rowDragState = null;
+    }
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+  });
+}
+
+// ===== Bulk Offset =====
+function applyOffset(section) {
+  if (section === 'keyboard') {
+    const dr = parseFloat(document.getElementById('kb-offset-row').value) || 0;
+    const dc = parseFloat(document.getElementById('kb-offset-col').value) || 0;
+    (overlayConfig.keyboard?.displayKeys || []).forEach(k => {
+      k.row = Math.round(((k.row || 0) + dr) * 10) / 10;
+      k.col = Math.round(((k.col || 0) + dc) * 10) / 10;
+    });
+    document.getElementById('kb-offset-row').value = 0;
+    document.getElementById('kb-offset-col').value = 0;
+    renderKbKeys();
+  } else if (section === 'leverless') {
+    const dr = parseFloat(document.getElementById('lv-offset-row').value) || 0;
+    const dc = parseFloat(document.getElementById('lv-offset-col').value) || 0;
+    (overlayConfig.leverless?.directions || []).forEach(k => {
+      k.row = Math.round(((k.row || 0) + dr) * 10) / 10;
+      k.col = Math.round(((k.col || 0) + dc) * 10) / 10;
+    });
+    (overlayConfig.leverless?.buttons || []).forEach(k => {
+      k.row = Math.round(((k.row || 0) + dr) * 10) / 10;
+      k.col = Math.round(((k.col || 0) + dc) * 10) / 10;
+    });
+    document.getElementById('lv-offset-row').value = 0;
+    document.getElementById('lv-offset-col').value = 0;
+    renderLeverless();
+  } else if (section === 'controller') {
+    const dr = parseFloat(document.getElementById('ctrl-offset-row').value) || 0;
+    const dc = parseFloat(document.getElementById('ctrl-offset-col').value) || 0;
+    (overlayConfig.controller?.buttons || []).forEach(k => {
+      k.row = Math.round(((k.row || 0) + dr) * 10) / 10;
+      k.col = Math.round(((k.col || 0) + dc) * 10) / 10;
+    });
+    document.getElementById('ctrl-offset-row').value = 0;
+    document.getElementById('ctrl-offset-col').value = 0;
+    renderControllerTab();
+    renderPreview();
+  }
+}
+
 // ===== Preview =====
 function setPreviewMode(mode) {
   previewMode = mode;
@@ -708,7 +882,7 @@ function renderPreview() {
 
 function pvApplyWidth(el, k) {
   const w = k.width || 1;
-  el.style.gridColumn = w > 1 ? `${k.col + 1} / span ${w}` : String(k.col + 1);
+  el.style.gridColumn = w > 1 ? `${(k.col || 0) + 1} / span ${w}` : String((k.col || 0) + 1);
 }
 
 function pvMakeButton(el, key, section, field, index) {
@@ -757,8 +931,8 @@ function renderPreviewKeyboard(grid) {
     grid.innerHTML = '<div style="color:#555;font-size:13px;padding:16px">キーが設定されていません</div>';
     return;
   }
-  const maxCol = Math.max(...keys.map(k => k.col + (k.width || 1)));
-  const maxRow = Math.max(...keys.map(k => k.row)) + 1;
+  const maxCol = Math.max(...keys.map(k => (k.col || 0) + (k.width || 1)));
+  const maxRow = Math.max(...keys.map(k => k.row || 0)) + 1;
   grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
@@ -766,8 +940,8 @@ function renderPreviewKeyboard(grid) {
   keys.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    pvSetLabel(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     pvApplyWidth(el, k);
     pvMakeButton(el, k.key, 'keyboard', 'displayKeys', i);
     grid.appendChild(el);
@@ -784,16 +958,16 @@ function renderPreviewLeverless(grid) {
     grid.innerHTML = '<div style="color:#555;font-size:13px;padding:16px">ボタンが設定されていません</div>';
     return;
   }
-  const maxCol = Math.max(...all.map(k => k.col + (k.width || 1)));
-  const maxRow = Math.max(...all.map(k => k.row)) + 1;
+  const maxCol = Math.max(...all.map(k => (k.col || 0) + (k.width || 1)));
+  const maxRow = Math.max(...all.map(k => k.row || 0)) + 1;
   grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
   dirs.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key direction';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    pvSetLabel(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     pvApplyWidth(el, k);
     pvMakeButton(el, k.key, 'leverless', 'directions', i);
     grid.appendChild(el);
@@ -803,8 +977,8 @@ function renderPreviewLeverless(grid) {
   btns.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    pvSetLabel(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     pvApplyWidth(el, k);
     pvMakeButton(el, k.key, 'leverless', 'buttons', i);
     grid.appendChild(el);
@@ -837,10 +1011,10 @@ function renderPreviewController(grid) {
   const dpad = document.createElement('div');
   dpad.className = 'pv-dpad-grid';
   const hatBtns = [
-    { key: 'hat_0_up', label: '↑', r: 0, c: 1 },
-    { key: 'hat_0_left', label: '←', r: 1, c: 0 },
-    { key: 'hat_0_right', label: '→', r: 1, c: 2 },
-    { key: 'hat_0_down', label: '↓', r: 2, c: 1 },
+    { key: 'hat_0_up', label: '\u2191', r: 0, c: 1 },
+    { key: 'hat_0_left', label: '\u2190', r: 1, c: 0 },
+    { key: 'hat_0_right', label: '\u2192', r: 1, c: 2 },
+    { key: 'hat_0_down', label: '\u2193', r: 2, c: 1 },
   ];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
@@ -870,8 +1044,8 @@ function renderPreviewController(grid) {
 
   // Face buttons
   if (btns.length > 0) {
-    const maxCol = Math.max(...btns.map(b => b.col + (b.width || 1)));
-    const maxRow = Math.max(...btns.map(b => b.row)) + 1;
+    const maxCol = Math.max(...btns.map(b => (b.col || 0) + (b.width || 1)));
+    const maxRow = Math.max(...btns.map(b => b.row || 0)) + 1;
     const btnGrid = document.createElement('div');
     btnGrid.className = 'pv-ctrl-buttons';
     btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
@@ -879,8 +1053,8 @@ function renderPreviewController(grid) {
     btns.forEach((b, i) => {
       const el = document.createElement('div');
       el.className = 'pv-key';
-      el.textContent = b.label;
-      el.style.gridRow = b.row + 1;
+      pvSetLabel(el, b.label);
+      el.style.gridRow = (b.row || 0) + 1;
       pvApplyWidth(el, b);
       const id = b.gamepad || b.label;
       pvMakeButton(el, id, 'controller', 'buttons', i);
@@ -960,7 +1134,7 @@ function pvGetNumpad() {
 }
 
 function pvGetArrow(np) {
-  return { '1':'↙','2':'↓','3':'↘','4':'←','5':'','6':'→','7':'↖','8':'↑','9':'↗' }[np] || '';
+  return { '1':'\u2199','2':'\u2193','3':'\u2198','4':'\u2190','5':'','6':'\u2192','7':'\u2196','8':'\u2191','9':'\u2197' }[np] || '';
 }
 
 function pvHistMax() {
@@ -997,46 +1171,17 @@ document.addEventListener('keyup', (e) => {
   }
 });
 
-// ===== Reorder =====
-function moveItem(arr, index, dir) {
-  const newIndex = index + dir;
-  if (newIndex < 0 || newIndex >= arr.length) return;
-  [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
-}
-
-function reorderKb(i, dir) {
-  moveItem(overlayConfig.keyboard.displayKeys, i, dir);
-  renderKbKeys();
-}
-
-function reorderLv(field, i, dir) {
-  moveItem(overlayConfig.leverless[field], i, dir);
-  renderLeverless();
-}
-
-function reorderCtrl(i, dir) {
-  moveItem(overlayConfig.controller.buttons, i, dir);
-  renderControllerTab();
-  renderPreview();
-}
-
 // ===== Config editing =====
 function renderKbKeys() {
   const tbody = document.getElementById('kb-keys');
   const keys = overlayConfig.keyboard?.displayKeys || [];
   tbody.innerHTML = keys.map((k, i) => `
-    <tr>
+    <tr draggable="true">
       <td><input value="${k.key}" data-i="${i}" data-f="key"></td>
       <td><input value="${k.label}" data-i="${i}" data-f="label"></td>
-      <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row"></td>
-      <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col"></td>
-      <td><input class="narrow" type="number" value="${k.width || 1}" min="1" data-i="${i}" data-f="width"></td>
-      <td>
-        <div class="reorder-btns">
-          <button class="reorder-btn" onclick="reorderKb(${i},-1)">▲</button>
-          <button class="reorder-btn" onclick="reorderKb(${i},1)">▼</button>
-        </div>
-      </td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.row}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.col}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.width || 1}" min="0.1" data-i="${i}" data-f="width"></td>
       <td><button class="btn-del" onclick="delKbKey(${i})">✕</button></td>
     </tr>
   `).join('');
@@ -1045,17 +1190,27 @@ function renderKbKeys() {
       const idx = +inp.dataset.i;
       const field = inp.dataset.f;
       let val = inp.value;
-      if (field === 'row' || field === 'col' || field === 'width') val = +val;
+      if (field === 'row' || field === 'col' || field === 'width') val = parseFloat(val);
       overlayConfig.keyboard.displayKeys[idx][field] = val;
       renderPreview();
     });
   });
+  initRowDrag(tbody,
+    () => overlayConfig.keyboard.displayKeys,
+    (arr) => { overlayConfig.keyboard.displayKeys = arr; },
+    renderKbKeys
+  );
   renderPreview();
 }
 
-function addKbKey() {
+function addKbKey(mouseKey) {
   if (!overlayConfig.keyboard) overlayConfig.keyboard = { displayKeys: [] };
-  overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0, width: 1 });
+  if (mouseKey) {
+    const labelMap = { mouse_left: 'LClick', mouse_right: 'RClick', mouse_middle: 'MClick' };
+    overlayConfig.keyboard.displayKeys.push({ key: mouseKey, label: labelMap[mouseKey] || mouseKey, row: 0, col: 0, width: 1 });
+  } else {
+    overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0, width: 1 });
+  }
   renderKbKeys();
 }
 function delKbKey(i) {
@@ -1072,19 +1227,13 @@ function renderLeverless() {
 function renderLvTable(tbodyId, items, field) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = items.map((k, i) => `
-    <tr>
+    <tr draggable="true">
       <td><input value="${k.key}" data-i="${i}" data-f="key" data-sec="${field}"></td>
       <td><input value="${k.gamepad || ''}" data-i="${i}" data-f="gamepad" data-sec="${field}"></td>
       <td><input value="${k.label}" data-i="${i}" data-f="label" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" value="${k.width || 1}" min="1" data-i="${i}" data-f="width" data-sec="${field}"></td>
-      <td>
-        <div class="reorder-btns">
-          <button class="reorder-btn" onclick="reorderLv('${field}',${i},-1)">▲</button>
-          <button class="reorder-btn" onclick="reorderLv('${field}',${i},1)">▼</button>
-        </div>
-      </td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.row}" data-i="${i}" data-f="row" data-sec="${field}"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.col}" data-i="${i}" data-f="col" data-sec="${field}"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${k.width || 1}" min="0.1" data-i="${i}" data-f="width" data-sec="${field}"></td>
       <td><button class="btn-del" onclick="delLv('${field}',${i})">✕</button></td>
     </tr>
   `).join('');
@@ -1094,11 +1243,16 @@ function renderLvTable(tbodyId, items, field) {
       const f = inp.dataset.f;
       const sec = inp.dataset.sec;
       let val = inp.value;
-      if (f === 'row' || f === 'col' || f === 'width') val = +val;
+      if (f === 'row' || f === 'col' || f === 'width') val = parseFloat(val);
       overlayConfig.leverless[sec][idx][f] = val;
       renderPreview();
     });
   });
+  initRowDrag(tbody,
+    () => overlayConfig.leverless[field],
+    (arr) => { overlayConfig.leverless[field] = arr; },
+    renderLeverless
+  );
 }
 
 function addLvDir() {
@@ -1125,22 +1279,24 @@ function renderControllerTab() {
   document.getElementById('ctrl-rs-y').value = cc.rightStick?.axisY ?? 3;
   document.getElementById('ctrl-deadzone').value = cc.deadzone ?? 0.15;
   document.getElementById('ctrl-dir-src').value = cc.directionSource || 'leftStick';
+  document.getElementById('ctrl-l2-axis').value = cc.l2Axis ?? 4;
+  document.getElementById('ctrl-r2-axis').value = cc.r2Axis ?? 5;
+
+  const sp = cc.stickPositions || {};
+  document.getElementById('ctrl-stick-l-row').value = sp.leftStick?.row ?? 0;
+  document.getElementById('ctrl-stick-l-col').value = sp.leftStick?.col ?? 0;
+  document.getElementById('ctrl-stick-r-row').value = sp.rightStick?.row ?? 0;
+  document.getElementById('ctrl-stick-r-col').value = sp.rightStick?.col ?? 0;
 
   const tbody = document.getElementById('ctrl-btns');
   const btns = cc.buttons || [];
   tbody.innerHTML = btns.map((b, i) => `
-    <tr>
+    <tr draggable="true">
       <td><input value="${b.gamepad || ''}" data-i="${i}" data-f="gamepad"></td>
       <td><input value="${b.label}" data-i="${i}" data-f="label"></td>
-      <td><input class="narrow" type="number" value="${b.row}" data-i="${i}" data-f="row"></td>
-      <td><input class="narrow" type="number" value="${b.col}" data-i="${i}" data-f="col"></td>
-      <td><input class="narrow" type="number" value="${b.width || 1}" min="1" data-i="${i}" data-f="width"></td>
-      <td>
-        <div class="reorder-btns">
-          <button class="reorder-btn" onclick="reorderCtrl(${i},-1)">▲</button>
-          <button class="reorder-btn" onclick="reorderCtrl(${i},1)">▼</button>
-        </div>
-      </td>
+      <td><input class="narrow" type="number" step="0.1" value="${b.row}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${b.col}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${b.width || 1}" min="0.1" data-i="${i}" data-f="width"></td>
       <td><button class="btn-del" onclick="delCtrlBtn(${i})">✕</button></td>
     </tr>
   `).join('');
@@ -1149,13 +1305,18 @@ function renderControllerTab() {
       const idx = +inp.dataset.i;
       const f = inp.dataset.f;
       let val = inp.value;
-      if (f === 'row' || f === 'col' || f === 'width') val = +val;
+      if (f === 'row' || f === 'col' || f === 'width') val = parseFloat(val);
       if (!overlayConfig.controller) overlayConfig.controller = {};
       if (!overlayConfig.controller.buttons) overlayConfig.controller.buttons = [];
       overlayConfig.controller.buttons[idx][f] = val;
       renderPreview();
     });
   });
+  initRowDrag(tbody,
+    () => overlayConfig.controller.buttons,
+    (arr) => { overlayConfig.controller.buttons = arr; },
+    () => { renderControllerTab(); renderPreview(); }
+  );
 }
 
 function addCtrlBtn() {
@@ -1197,6 +1358,20 @@ async function saveOverlayConfig() {
   };
   overlayConfig.controller.deadzone = +document.getElementById('ctrl-deadzone').value;
   overlayConfig.controller.directionSource = document.getElementById('ctrl-dir-src').value;
+  overlayConfig.controller.l2Axis = +document.getElementById('ctrl-l2-axis').value;
+  overlayConfig.controller.r2Axis = +document.getElementById('ctrl-r2-axis').value;
+
+  // Stick positions
+  overlayConfig.controller.stickPositions = {
+    leftStick: {
+      row: parseFloat(document.getElementById('ctrl-stick-l-row').value) || 0,
+      col: parseFloat(document.getElementById('ctrl-stick-l-col').value) || 0,
+    },
+    rightStick: {
+      row: parseFloat(document.getElementById('ctrl-stick-r-row').value) || 0,
+      col: parseFloat(document.getElementById('ctrl-stick-r-col').value) || 0,
+    },
+  };
 
   // Sync layout from inputs
   if (!overlayConfig.layout) overlayConfig.layout = {};
@@ -1251,18 +1426,48 @@ async function saveSenderConfig() {
 // ===== Presets =====
 let presetsData = {};
 
+function getPresetSelectors() {
+  return [
+    document.getElementById('preset-select'),
+    document.getElementById('preset-select-lv'),
+    document.getElementById('preset-select-ctrl'),
+  ];
+}
+
 function renderPresetSelect() {
-  const sel = document.getElementById('preset-select');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">-- 選択 --</option>';
-  Object.keys(presetsData).sort().forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    if (name === cur) opt.selected = true;
-    sel.appendChild(opt);
+  getPresetSelectors().forEach(sel => {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- 選択 --</option>';
+    Object.keys(presetsData).sort().forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      if (name === cur) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+  updateOverwriteButtons();
+}
+
+function updateOverwriteButtons() {
+  const pairs = [
+    ['preset-select', 'btn-overwrite'],
+    ['preset-select-lv', 'btn-overwrite-lv'],
+    ['preset-select-ctrl', 'btn-overwrite-ctrl'],
+  ];
+  pairs.forEach(([selId, btnId]) => {
+    const sel = document.getElementById(selId);
+    const btn = document.getElementById(btnId);
+    btn.style.display = sel.value ? 'inline-block' : 'none';
   });
 }
+
+// Add change listeners for preset selects
+document.addEventListener('DOMContentLoaded', () => {
+  ['preset-select', 'preset-select-lv', 'preset-select-ctrl'].forEach(id => {
+    document.getElementById(id).addEventListener('change', updateOverwriteButtons);
+  });
+});
 
 async function fetchPresets() {
   const res = await fetch('/api/presets');
@@ -1270,8 +1475,21 @@ async function fetchPresets() {
   renderPresetSelect();
 }
 
-function loadPreset() {
-  const name = document.getElementById('preset-select').value;
+function getPresetSelectForTab(tab) {
+  if (tab === 'lv') return document.getElementById('preset-select-lv');
+  if (tab === 'ctrl') return document.getElementById('preset-select-ctrl');
+  return document.getElementById('preset-select');
+}
+
+function getPresetNameInputForTab(tab) {
+  if (tab === 'lv') return document.getElementById('preset-name-input-lv');
+  if (tab === 'ctrl') return document.getElementById('preset-name-input-ctrl');
+  return document.getElementById('preset-name-input');
+}
+
+function loadPreset(tab) {
+  const sel = getPresetSelectForTab(tab);
+  const name = sel.value;
   if (!name || !presetsData[name]) return;
   const p = presetsData[name];
   if (p.keyboard) overlayConfig.keyboard = JSON.parse(JSON.stringify(p.keyboard));
@@ -1283,9 +1501,7 @@ function loadPreset() {
   showStatus(`プリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
 }
 
-async function savePreset() {
-  const name = document.getElementById('preset-name-input').value.trim();
-  if (!name) { showStatus('プリセット名を入力してください', false); return; }
+async function savePresetData(name) {
   const res = await fetch('/api/presets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1296,20 +1512,42 @@ async function savePreset() {
       controller: overlayConfig.controller || {},
     }),
   });
-  const data = await res.json();
+  return res.json();
+}
+
+async function savePreset(tab) {
+  const nameInput = getPresetNameInputForTab(tab);
+  const name = nameInput.value.trim();
+  if (!name) { showStatus('プリセット名を入力してください', false); return; }
+  const data = await savePresetData(name);
   if (data.ok) {
     presetsData[name] = { keyboard: overlayConfig.keyboard, leverless: overlayConfig.leverless, controller: overlayConfig.controller };
     renderPresetSelect();
-    document.getElementById('preset-select').value = name;
-    document.getElementById('preset-name-input').value = '';
+    getPresetSelectors().forEach(s => { if ([...s.options].some(o => o.value === name)) s.value = name; });
+    nameInput.value = '';
     showStatus(`プリセット「${name}」を保存しました`, true);
   } else {
     showStatus('エラー: ' + data.error, false);
   }
 }
 
-async function deletePreset() {
-  const name = document.getElementById('preset-select').value;
+async function overwritePreset(tab) {
+  const sel = getPresetSelectForTab(tab);
+  const name = sel.value;
+  if (!name) return;
+  if (!confirm(`プリセット「${name}」を上書きしますか？`)) return;
+  const data = await savePresetData(name);
+  if (data.ok) {
+    presetsData[name] = { keyboard: overlayConfig.keyboard, leverless: overlayConfig.leverless, controller: overlayConfig.controller };
+    showStatus(`プリセット「${name}」を上書き保存しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
+async function deletePreset(tab) {
+  const sel = getPresetSelectForTab(tab);
+  const name = sel.value;
   if (!name) return;
   if (!confirm(`プリセット「${name}」を削除しますか？`)) return;
   const res = await fetch('/api/presets', {

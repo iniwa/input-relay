@@ -23,9 +23,6 @@ echo.
 echo [4/4] Starting sender ...
 echo.
 
-REM Sender config GUI is served by the receiver
-REM Open it if receiver is running
-start http://localhost:8080/
 python sender\input_sender.py
 
 echo.

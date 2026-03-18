@@ -1,5 +1,5 @@
 """
-Input Sender - Captures keyboard/gamepad input and sends to Sub PC via WebSocket.
+Input Sender - Captures keyboard/gamepad/mouse input and sends to Sub PC via WebSocket.
 Run on Main PC.
 """
 
@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 
 import websockets
-from pynput import keyboard
+from pynput import keyboard, mouse
 
 pygame = None
 
@@ -26,12 +26,26 @@ config = load_config()
 ws_connection = None
 running = True
 pressed_keys = set()
+_pressed_keys_lock = threading.Lock()
 
 MODES = ['keyboard', 'leverless', 'controller']
 current_mode = 'keyboard'
 
 TOGGLE_KEY_NAME = config.get("toggleKey", "f12")
 TOGGLE_KEY = getattr(keyboard.Key, TOGGLE_KEY_NAME, keyboard.Key.f12)
+
+# Modifier key mapping: normalize left/right variants to base name
+_MODIFIER_MAP = {
+    keyboard.Key.shift: 'shift',
+    keyboard.Key.shift_l: 'shift',
+    keyboard.Key.shift_r: 'shift_r',
+    keyboard.Key.ctrl: 'ctrl',
+    keyboard.Key.ctrl_l: 'ctrl',
+    keyboard.Key.ctrl_r: 'ctrl_r',
+    keyboard.Key.alt: 'alt',
+    keyboard.Key.alt_l: 'alt',
+    keyboard.Key.alt_r: 'alt_r',
+}
 
 
 def load_pygame():
@@ -52,6 +66,9 @@ def make_event(event_type, key, source="keyboard"):
 
 
 def key_to_str(key):
+    # Check modifier map first
+    if key in _MODIFIER_MAP:
+        return _MODIFIER_MAP[key]
     if hasattr(key, "char") and key.char is not None:
         return key.char.lower()
     if hasattr(key, "name"):
@@ -83,17 +100,35 @@ def on_press(key):
         return
 
     key_str = key_to_str(key)
-    if key_str not in pressed_keys:
-        pressed_keys.add(key_str)
-        if current_mode == 'keyboard':
-            event_queue.put(make_event("key_down", key_str))
+    with _pressed_keys_lock:
+        if key_str not in pressed_keys:
+            pressed_keys.add(key_str)
+            if current_mode == 'keyboard':
+                event_queue.put(make_event("key_down", key_str))
 
 
 def on_release(key):
     key_str = key_to_str(key)
-    pressed_keys.discard(key_str)
+    with _pressed_keys_lock:
+        pressed_keys.discard(key_str)
     if current_mode == 'keyboard':
         event_queue.put(make_event("key_up", key_str))
+
+
+# --- Mouse listener ---
+def on_mouse_click(x, y, button, pressed):
+    if current_mode != 'keyboard':
+        return
+    btn_map = {
+        mouse.Button.left: 'mouse_left',
+        mouse.Button.right: 'mouse_right',
+        mouse.Button.middle: 'mouse_middle',
+    }
+    key_str = btn_map.get(button)
+    if not key_str:
+        return
+    etype = "key_down" if pressed else "key_up"
+    event_queue.put(make_event(etype, key_str, "mouse"))
 
 
 def gamepad_loop():
@@ -149,7 +184,7 @@ def gamepad_loop():
 
         # Axes — mode-dependent handling
         if current_mode == 'leverless':
-            # Threshold-based: emit key_down/key_up at ±0.5
+            # Threshold-based: emit key_down/key_up at +/-0.5
             deadzone = 0.5
             for i in range(joy.get_numaxes()):
                 raw = joy.get_axis(i)
@@ -193,21 +228,29 @@ async def sender(host, port):
         try:
             async with websockets.connect(uri) as ws:
                 ws_connection = ws
-                print(f"[Sender] Connected! ({TOGGLE_KEY_NAME.upper()} to cycle: keyboard → leverless → controller)")
+                print(f"[Sender] Connected! ({TOGGLE_KEY_NAME.upper()} to cycle: keyboard -> leverless -> controller)")
                 while running:
                     msg = await event_queue.get()
-                    await ws.send(msg)
+                    try:
+                        await ws.send(msg)
+                    except websockets.ConnectionClosed:
+                        break
         except (ConnectionRefusedError, OSError) as e:
+            ws_connection = None
             print(f"[Sender] Connection failed: {e}. Retrying in 2s...")
             await asyncio.sleep(2)
         except websockets.ConnectionClosed:
+            ws_connection = None
             print("[Sender] Connection lost. Reconnecting...")
             await asyncio.sleep(1)
 
 
 async def main():
-    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-    listener.start()
+    kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    kb_listener.start()
+
+    mouse_listener = mouse.Listener(on_click=on_mouse_click)
+    mouse_listener.start()
 
     gp_thread = threading.Thread(target=gamepad_loop, daemon=True)
     gp_thread.start()

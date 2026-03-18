@@ -315,6 +315,61 @@
       ]
     }
   },
+  "PS5 Controller": {
+    "keyboard": {},
+    "leverless": {},
+    "controller": {
+      "leftStick": { "axisX": 0, "axisY": 1 },
+      "rightStick": { "axisX": 2, "axisY": 3 },
+      "deadzone": 0.15,
+      "directionSource": "leftStick",
+      "l2Axis": 4,
+      "r2Axis": 5,
+      "buttons": [
+        { "gamepad": "btn_0", "label": "\u25a1", "row": 0, "col": 0 },
+        { "gamepad": "btn_1", "label": "\u2715", "row": 1, "col": 1 },
+        { "gamepad": "btn_2", "label": "\u25cb", "row": 0, "col": 1 },
+        { "gamepad": "btn_3", "label": "\u25b3", "row": 0, "col": 2 },
+        { "gamepad": "btn_4", "label": "L1", "row": 0, "col": 3 },
+        { "gamepad": "btn_5", "label": "R1", "row": 0, "col": 4 },
+        { "gamepad": "btn_6", "label": "L2", "row": 1, "col": 3 },
+        { "gamepad": "btn_7", "label": "R2", "row": 1, "col": 4 },
+        { "gamepad": "btn_8", "label": "Share", "row": 2, "col": 0 },
+        { "gamepad": "btn_9", "label": "Options", "row": 2, "col": 1 },
+        { "gamepad": "btn_10", "label": "L3", "row": 2, "col": 2 },
+        { "gamepad": "btn_11", "label": "R3", "row": 2, "col": 3 },
+        { "gamepad": "btn_12", "label": "PS", "row": 2, "col": 4 },
+        { "gamepad": "btn_13", "label": "Touch", "row": 2, "col": 5 }
+      ]
+    }
+  },
+  "Xbox Controller": {
+    "keyboard": {},
+    "leverless": {},
+    "controller": {
+      "leftStick": { "axisX": 0, "axisY": 1 },
+      "rightStick": { "axisX": 2, "axisY": 3 },
+      "deadzone": 0.15,
+      "directionSource": "leftStick",
+      "l2Axis": 4,
+      "r2Axis": 5,
+      "buttons": [
+        { "gamepad": "btn_0", "label": "X", "row": 0, "col": 0 },
+        { "gamepad": "btn_1", "label": "A", "row": 1, "col": 1 },
+        { "gamepad": "btn_2", "label": "B", "row": 0, "col": 1 },
+        { "gamepad": "btn_3", "label": "Y", "row": 0, "col": 2 },
+        { "gamepad": "btn_4", "label": "LB", "row": 0, "col": 3 },
+        { "gamepad": "btn_5", "label": "RB", "row": 0, "col": 4 },
+        { "gamepad": "btn_6", "label": "LT", "row": 1, "col": 3 },
+        { "gamepad": "btn_7", "label": "RT", "row": 1, "col": 4 },
+        { "gamepad": "btn_8", "label": "View", "row": 2, "col": 0 },
+        { "gamepad": "btn_9", "label": "Menu", "row": 2, "col": 1 },
+        { "gamepad": "btn_10", "label": "LS", "row": 2, "col": 2 },
+        { "gamepad": "btn_11", "label": "RS", "row": 2, "col": 3 },
+        { "gamepad": "btn_12", "label": "Xbox", "row": 2, "col": 4 }
+      ]
+    }
+  },
   "test": {
     "keyboard": {
       "displayKeys": [

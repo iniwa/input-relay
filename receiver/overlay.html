@@ -43,6 +43,8 @@
     font-weight: bold;
     background: rgba(0,0,0,0.4);
     transition: background 0.05s, border-color 0.05s, transform 0.05s;
+    text-align: center;
+    line-height: 1.2;
   }
   .key-btn.active {
     background: rgba(255,220,50,0.85);
@@ -101,6 +103,23 @@
 
   .ctrl-buttons { display: grid; gap: 4px; }
 
+  /* L2/R2 analog bar */
+  .trigger-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .trigger-bar-bg {
+    width: 16px; height: 60px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .trigger-bar-fill {
+    position: absolute; bottom: 0; left: 0; width: 100%;
+    background: rgba(255,220,50,0.85);
+    border-radius: 4px;
+    transition: height 0.04s;
+  }
+  .trigger-label { font-size: 10px; color: rgba(255,255,255,0.5); }
+
   /* History */
   #history {
     display: flex;
@@ -109,6 +128,7 @@
     font-size: 18px;
     font-weight: bold;
     min-width: 200px;
+    transition: opacity 0.5s;
   }
   .history-entry {
     background: rgba(0,0,0,0.5);
@@ -137,8 +157,9 @@
 const params = new URLSearchParams(location.search);
 const WS_PORT = params.get('ws') || '8765';
 const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
+const DISPLAY_MODE = params.get('mode') || 'all'; // 'all', 'input', 'history'
 
-const NEUTRAL = 'Ⓝ';
+const NEUTRAL = '\u24C3';
 
 let config = null;
 let mode = 'keyboard';
@@ -147,6 +168,7 @@ let keyElements = {};
 
 let historyEntries = [];
 let idleTimer = null;
+let idleHideTimer = null;
 
 let dirState = { left: false, right: false, up: false, down: false };
 const dirKeys = {
@@ -227,8 +249,17 @@ function getNumpad() {
 }
 
 function getDirArrow(numpad) {
-  const arrows = { '1':'↙','2':'↓','3':'↘','4':'←','5':'','6':'→','7':'↖','8':'↑','9':'↗' };
+  const arrows = { '1':'\u2199','2':'\u2193','3':'\u2198','4':'\u2190','5':'','6':'\u2192','7':'\u2196','8':'\u2191','9':'\u2197' };
   return arrows[numpad] || '';
+}
+
+// --- Label rendering with \n support ---
+function setLabelContent(el, label) {
+  if (label && label.includes('\\n')) {
+    el.innerHTML = label.replace(/\\n/g, '<br>');
+  } else {
+    el.textContent = label;
+  }
 }
 
 // --- Build layouts ---
@@ -245,8 +276,8 @@ function buildKeyboard(cfg) {
   buttonLabels = {};
   const keys = cfg.keyboard?.displayKeys || [];
   if (!keys.length) return;
-  const maxCol = Math.max(...keys.map(k => k.col + (k.width || 1)));
-  const maxRow = Math.max(...keys.map(k => k.row)) + 1;
+  const maxCol = Math.max(...keys.map(k => (k.col || 0) + (k.width || 1)));
+  const maxRow = Math.max(...keys.map(k => k.row || 0)) + 1;
   display.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   display.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
@@ -254,8 +285,8 @@ function buildKeyboard(cfg) {
   keys.forEach(k => {
     const el = document.createElement('div');
     el.className = 'key-btn';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    setLabelContent(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     applyWidth(el, k);
     display.appendChild(el);
     keyElements[k.key] = el;
@@ -275,16 +306,16 @@ function buildLeverless(cfg) {
   const btns = cfg.leverless?.buttons || [];
   const all = [...dirs, ...btns];
   if (!all.length) return;
-  const maxCol = Math.max(...all.map(k => k.col + (k.width || 1)));
-  const maxRow = Math.max(...all.map(k => k.row)) + 1;
+  const maxCol = Math.max(...all.map(k => (k.col || 0) + (k.width || 1)));
+  const maxRow = Math.max(...all.map(k => k.row || 0)) + 1;
   display.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   display.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
   dirs.forEach(k => {
     const el = document.createElement('div');
     el.className = 'key-btn direction';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    setLabelContent(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     applyWidth(el, k);
     display.appendChild(el);
     keyElements[k.key] = el;
@@ -294,8 +325,8 @@ function buildLeverless(cfg) {
   btns.forEach(k => {
     const el = document.createElement('div');
     el.className = 'key-btn';
-    el.textContent = k.label;
-    el.style.gridRow = k.row + 1;
+    setLabelContent(el, k.label);
+    el.style.gridRow = (k.row || 0) + 1;
     applyWidth(el, k);
     display.appendChild(el);
     keyElements[k.key] = el;
@@ -316,10 +347,15 @@ function buildController(cfg) {
   axisState = {};
 
   const cc = cfg.controller || {};
+  const stickPos = cc.stickPositions || {};
 
   // Left stick
   const lWrap = document.createElement('div');
   lWrap.className = 'stick-wrap';
+  if (stickPos.leftStick) {
+    lWrap.style.gridRow = (stickPos.leftStick.row || 0) + 1;
+    lWrap.style.gridColumn = (stickPos.leftStick.col || 0) + 1;
+  }
   const lArea = document.createElement('div');
   lArea.className = 'stick-area';
   lArea.id = 'stick-left';
@@ -331,16 +367,22 @@ function buildController(cfg) {
   lWrap.appendChild(lLabel);
   display.appendChild(lWrap);
 
+  // L2 trigger bar
+  const l2Wrap = document.createElement('div');
+  l2Wrap.className = 'trigger-wrap';
+  l2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-l2" style="height:0"></div></div><div class="trigger-label">L2</div>';
+  display.appendChild(l2Wrap);
+
   // D-pad
   const dpadWrap = document.createElement('div');
   dpadWrap.className = 'stick-wrap';
   const dpad = document.createElement('div');
   dpad.className = 'dpad-grid';
   const hatBtns = [
-    { key: 'hat_0_up', label: '↑', r: 0, c: 1 },
-    { key: 'hat_0_left', label: '←', r: 1, c: 0 },
-    { key: 'hat_0_right', label: '→', r: 1, c: 2 },
-    { key: 'hat_0_down', label: '↓', r: 2, c: 1 },
+    { key: 'hat_0_up', label: '\u2191', r: 0, c: 1 },
+    { key: 'hat_0_left', label: '\u2190', r: 1, c: 0 },
+    { key: 'hat_0_right', label: '\u2192', r: 1, c: 2 },
+    { key: 'hat_0_down', label: '\u2193', r: 2, c: 1 },
   ];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
@@ -368,8 +410,8 @@ function buildController(cfg) {
   // Face buttons
   const btns = cc.buttons || [];
   if (btns.length > 0) {
-    const maxCol = Math.max(...btns.map(b => b.col + (b.width || 1)));
-    const maxRow = Math.max(...btns.map(b => b.row)) + 1;
+    const maxCol = Math.max(...btns.map(b => (b.col || 0) + (b.width || 1)));
+    const maxRow = Math.max(...btns.map(b => b.row || 0)) + 1;
     const grid = document.createElement('div');
     grid.className = 'ctrl-buttons';
     grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
@@ -377,8 +419,8 @@ function buildController(cfg) {
     btns.forEach(b => {
       const el = document.createElement('div');
       el.className = 'key-btn';
-      el.textContent = b.label;
-      el.style.gridRow = b.row + 1;
+      setLabelContent(el, b.label);
+      el.style.gridRow = (b.row || 0) + 1;
       applyWidth(el, b);
       grid.appendChild(el);
       if (b.gamepad) {
@@ -389,10 +431,20 @@ function buildController(cfg) {
     display.appendChild(grid);
   }
 
+  // R2 trigger bar
+  const r2Wrap = document.createElement('div');
+  r2Wrap.className = 'trigger-wrap';
+  r2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-r2" style="height:0"></div></div><div class="trigger-label">R2</div>';
+  display.appendChild(r2Wrap);
+
   // Right stick
   if (cc.rightStick) {
     const rWrap = document.createElement('div');
     rWrap.className = 'stick-wrap';
+    if (stickPos.rightStick) {
+      rWrap.style.gridRow = (stickPos.rightStick.row || 0) + 1;
+      rWrap.style.gridColumn = (stickPos.rightStick.col || 0) + 1;
+    }
     const rArea = document.createElement('div');
     rArea.className = 'stick-area';
     rArea.id = 'stick-right';
@@ -422,6 +474,14 @@ function updateStickEl(el, x, y) {
   }
 }
 
+function updateTriggerBar(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  // Triggers typically go from -1 (released) to 1 (pressed), normalize to 0-1
+  const norm = Math.max(0, Math.min(1, (value + 1) / 2));
+  el.style.height = (norm * 100) + '%';
+}
+
 function updateStickVisuals() {
   if (!config?.controller) return;
   const cc = config.controller;
@@ -433,6 +493,11 @@ function updateStickVisuals() {
     const rsY = cc.rightStick.axisY ?? 3;
     updateStickEl(document.getElementById('stick-right'), axisState[rsX] ?? 0, axisState[rsY] ?? 0);
   }
+  // L2/R2 analog triggers (typically axis 4 and 5)
+  const l2Axis = cc.l2Axis ?? 4;
+  const r2Axis = cc.r2Axis ?? 5;
+  updateTriggerBar('trigger-l2', axisState[l2Axis] ?? -1);
+  updateTriggerBar('trigger-r2', axisState[r2Axis] ?? -1);
 }
 
 function updateDirFromStick() {
@@ -472,6 +537,7 @@ function buildLayout() {
   const histEl = document.getElementById('history');
   const max = histCfg().maxEntries ?? 10;
   histEl.style.display = max === 0 ? 'none' : 'flex';
+  histEl.style.opacity = '1';
   if (max > 0) {
     historyEntries = [NEUTRAL];
     histEl.innerHTML = `<div class="history-entry">${NEUTRAL}</div>`;
@@ -479,16 +545,39 @@ function buildLayout() {
     historyEntries = [];
     histEl.innerHTML = '';
   }
+
+  // Apply display mode filtering
+  if (DISPLAY_MODE === 'input') {
+    document.getElementById('history').style.display = 'none';
+  } else if (DISPLAY_MODE === 'history') {
+    document.getElementById('key-display').style.display = 'none';
+  }
+
   applyLayout();
   initPanelDrag();
 }
 
 function resetIdleTimer() {
+  const histEl = document.getElementById('history');
+  // Remove fading from entries
+  document.querySelectorAll('.history-entry').forEach(el => el.classList.remove('fading'));
+  // Show history panel
+  histEl.style.opacity = '1';
+
   if (idleTimer) clearTimeout(idleTimer);
+  if (idleHideTimer) clearTimeout(idleHideTimer);
+
   const timeout = histCfg().idleTimeoutMs ?? 3000;
+
+  // Fade entries after idle
   idleTimer = setTimeout(() => {
     document.querySelectorAll('.history-entry').forEach(el => el.classList.add('fading'));
   }, timeout);
+
+  // Hide entire history panel after extended idle
+  idleHideTimer = setTimeout(() => {
+    histEl.style.opacity = '0';
+  }, timeout + 2000);
 }
 
 function getCurrentStateText() {
