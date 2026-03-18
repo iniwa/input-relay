@@ -358,12 +358,14 @@
   },
   "layout": {
     "keyDisplay": {
-      "x": 827,
-      "y": 347
+      "x": 944,
+      "y": 464,
+      "scale": 2
     },
     "history": {
       "x": 267,
-      "y": 272
+      "y": 272,
+      "scale": 1
     }
   },
   "inputHistory": {
