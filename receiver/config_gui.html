@@ -603,6 +603,11 @@
     <input type="number" id="hist-kb-idle" value="3000" min="0">
     <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
   </div>
+  <div class="form-group">
+    <label>上下反転</label>
+    <input type="checkbox" id="hist-kb-flip">
+    <span style="font-size:12px;color:#666">新しい入力を上に表示</span>
+  </div>
 
   <h2>Leverless モード</h2>
   <div class="form-group">
@@ -615,6 +620,11 @@
     <input type="number" id="hist-lv-idle" value="3000" min="0">
     <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
   </div>
+  <div class="form-group">
+    <label>上下反転</label>
+    <input type="checkbox" id="hist-lv-flip">
+    <span style="font-size:12px;color:#666">新しい入力を上に表示</span>
+  </div>
 
   <h2>Controller モード</h2>
   <div class="form-group">
@@ -626,6 +636,11 @@
     <label>アイドルタイムアウト (ms)</label>
     <input type="number" id="hist-ct-idle" value="3000" min="0">
     <span style="font-size:12px;color:#666">無操作でこの時間経過後フェード → 非表示。操作再開で復活</span>
+  </div>
+  <div class="form-group">
+    <label>上下反転</label>
+    <input type="checkbox" id="hist-ct-flip">
+    <span style="font-size:12px;color:#666">新しい入力を上に表示</span>
   </div>
 
   <div class="btn-row">
@@ -1336,10 +1351,12 @@ function pvGetArrow(np) {
   return { '1':'\u2199','2':'\u2193','3':'\u2198','4':'\u2190','5':'','6':'\u2192','7':'\u2196','8':'\u2191','9':'\u2197' }[np] || '';
 }
 
-function pvHistMax() {
+function pvHistCfg() {
   const h = overlayConfig.inputHistory || {};
-  return (h[previewMode] || h).maxEntries ?? 10;
+  return h[previewMode] || {};
 }
+function pvHistMax() { return pvHistCfg().maxEntries ?? 10; }
+function pvHistFlip() { return !!pvHistCfg().flip; }
 
 function pvAddHistory(text) {
   const max = pvHistMax();
@@ -1348,8 +1365,8 @@ function pvAddHistory(text) {
   if (pvHistoryEntries.length > max) pvHistoryEntries.shift();
   const hist = document.getElementById('pv-history');
   hist.style.display = 'flex';
-  hist.innerHTML = pvHistoryEntries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
-  hist.scrollTop = hist.scrollHeight;
+  const entries = pvHistFlip() ? pvHistoryEntries.slice().reverse() : pvHistoryEntries;
+  hist.innerHTML = entries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
 }
 
 // Keyboard input for preview
@@ -1538,12 +1555,15 @@ function renderHistory() {
   const kb = h.keyboard || {};
   const lv = h.leverless || {};
   const ct = h.controller || {};
-  document.getElementById('hist-kb-max').value  = kb.maxEntries  ?? 10;
-  document.getElementById('hist-kb-idle').value = kb.idleTimeoutMs ?? 3000;
-  document.getElementById('hist-lv-max').value  = lv.maxEntries  ?? 10;
-  document.getElementById('hist-lv-idle').value = lv.idleTimeoutMs ?? 3000;
-  document.getElementById('hist-ct-max').value  = ct.maxEntries  ?? 10;
-  document.getElementById('hist-ct-idle').value = ct.idleTimeoutMs ?? 3000;
+  document.getElementById('hist-kb-max').value   = kb.maxEntries    ?? 10;
+  document.getElementById('hist-kb-idle').value  = kb.idleTimeoutMs ?? 3000;
+  document.getElementById('hist-kb-flip').checked = !!kb.flip;
+  document.getElementById('hist-lv-max').value   = lv.maxEntries    ?? 10;
+  document.getElementById('hist-lv-idle').value  = lv.idleTimeoutMs ?? 3000;
+  document.getElementById('hist-lv-flip').checked = !!lv.flip;
+  document.getElementById('hist-ct-max').value   = ct.maxEntries    ?? 10;
+  document.getElementById('hist-ct-idle').value  = ct.idleTimeoutMs ?? 3000;
+  document.getElementById('hist-ct-flip').checked = !!ct.flip;
 }
 
 async function saveOverlayConfig() {
@@ -1584,14 +1604,17 @@ async function saveOverlayConfig() {
     keyboard: {
       maxEntries:    +document.getElementById('hist-kb-max').value,
       idleTimeoutMs: +document.getElementById('hist-kb-idle').value,
+      flip:           document.getElementById('hist-kb-flip').checked,
     },
     leverless: {
       maxEntries:    +document.getElementById('hist-lv-max').value,
       idleTimeoutMs: +document.getElementById('hist-lv-idle').value,
+      flip:           document.getElementById('hist-lv-flip').checked,
     },
     controller: {
       maxEntries:    +document.getElementById('hist-ct-max').value,
       idleTimeoutMs: +document.getElementById('hist-ct-idle').value,
+      flip:           document.getElementById('hist-ct-flip').checked,
     },
   };
 

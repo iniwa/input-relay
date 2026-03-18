@@ -709,13 +709,14 @@ function recordCurrentState() {
   if (historyEntries.length > max) historyEntries.shift();
   const histEl = document.getElementById('history');
   histEl.innerHTML = '';
-  historyEntries.forEach(entry => {
+  const entries = histCfg().flip ? historyEntries.slice().reverse() : historyEntries;
+  entries.forEach(entry => {
     const div = document.createElement('div');
     div.className = 'history-entry';
     div.textContent = entry;
     histEl.appendChild(div);
   });
-  histEl.scrollTop = histEl.scrollHeight;
+  histEl.scrollTop = histCfg().flip ? 0 : histEl.scrollHeight;
   resetIdleTimer();
 }
 

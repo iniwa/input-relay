@@ -357,29 +357,58 @@
     ]
   },
   "layout": {
-    "keyDisplay": {
-      "x": 155,
-      "y": 784,
-      "scale": 1
+    "keyboard": {
+      "keyDisplay": {
+        "x": 155,
+        "y": 949,
+        "scale": 1
+      },
+      "history": {
+        "x": 32,
+        "y": 875,
+        "scale": 1
+      }
     },
-    "history": {
-      "x": 32,
-      "y": 875,
-      "scale": 1
+    "leverless": {
+      "keyDisplay": {
+        "x": 0,
+        "y": 997,
+        "scale": 1
+      },
+      "history": {
+        "x": 53,
+        "y": 757,
+        "scale": 1.5
+      }
+    },
+    "controller": {
+      "keyDisplay": {
+        "x": 1824,
+        "y": 805,
+        "scale": 1
+      },
+      "history": {
+        "x": 32,
+        "y": 875,
+        "scale": 1
+      }
     }
   },
   "inputHistory": {
     "keyboard": {
       "maxEntries": 0,
-      "idleTimeoutMs": 3000
+      "idleTimeoutMs": 3000,
+      "flip": false
     },
     "leverless": {
       "maxEntries": 15,
-      "idleTimeoutMs": 3000
+      "idleTimeoutMs": 3000,
+      "flip": true
     },
     "controller": {
       "maxEntries": 0,
-      "idleTimeoutMs": 3000
+      "idleTimeoutMs": 3000,
+      "flip": false
     }
   }
 }
