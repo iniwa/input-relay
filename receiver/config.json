@@ -373,7 +373,7 @@
   },
   "inputHistory": {
     "keyboard": {
-      "maxEntries": 0,
+      "maxEntries": 15,
       "idleTimeoutMs": 3000
     },
     "leverless": {
@@ -381,7 +381,7 @@
       "idleTimeoutMs": 3000
     },
     "controller": {
-      "maxEntries": 0,
+      "maxEntries": 15,
       "idleTimeoutMs": 3000
     }
   }

@@ -186,9 +186,13 @@ class OverlayHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _serve_overlay_with_mode(self, mode):
+        hide = "#key-display" if mode == "history" else "#history"
         file_path = OVERLAY_DIR / "overlay.html"
         content = file_path.read_text(encoding="utf-8")
-        inject = f'<script>window.__DISPLAY_MODE__="{mode}";</script>'
+        inject = (
+            f'<script>window.__DISPLAY_MODE__="{mode}";</script>'
+            f'<style>{hide}{{display:none!important}}</style>'
+        )
         content = content.replace("<head>", f"<head>{inject}", 1)
         body = content.encode("utf-8")
         self.send_response(200)
