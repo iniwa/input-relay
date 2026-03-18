@@ -134,6 +134,8 @@ def on_mouse_click(x, y, button, pressed):
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
         mouse.Button.middle: 'mouse_middle',
+        mouse.Button.x1: 'mouse_x1',
+        mouse.Button.x2: 'mouse_x2',
     }
     key_str = btn_map.get(button)
     if not key_str:

@@ -158,6 +158,27 @@
         "row": 4,
         "col": 2,
         "width": 1
+      },
+      {
+        "key": "mouse_right",
+        "label": "RClick",
+        "row": 1,
+        "col": 10,
+        "width": 1
+      },
+      {
+        "key": "mouse_left",
+        "label": "LClick",
+        "row": 1,
+        "col": 8,
+        "width": 1
+      },
+      {
+        "key": "mouse_middle",
+        "label": "MClick",
+        "row": 1,
+        "col": 9,
+        "width": 1
       }
     ]
   },

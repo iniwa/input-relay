@@ -395,6 +395,8 @@
     <button class="btn-add" onclick="addKbKey('mouse_left')">+ マウス左</button>
     <button class="btn-add" onclick="addKbKey('mouse_right')">+ マウス右</button>
     <button class="btn-add" onclick="addKbKey('mouse_middle')">+ マウス中</button>
+    <button class="btn-add" onclick="addKbKey('mouse_x1')">+ サイド後(X1)</button>
+    <button class="btn-add" onclick="addKbKey('mouse_x2')">+ サイド前(X2)</button>
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
   </div>
 </div>
@@ -1252,7 +1254,7 @@ function renderKbKeys() {
 function addKbKey(mouseKey) {
   if (!overlayConfig.keyboard) overlayConfig.keyboard = { displayKeys: [] };
   if (mouseKey) {
-    const labelMap = { mouse_left: 'LClick', mouse_right: 'RClick', mouse_middle: 'MClick' };
+    const labelMap = { mouse_left: 'LClick', mouse_right: 'RClick', mouse_middle: 'MClick', mouse_x1: 'Side1', mouse_x2: 'Side2' };
     overlayConfig.keyboard.displayKeys.push({ key: mouseKey, label: labelMap[mouseKey] || mouseKey, row: 0, col: 0, width: 1 });
   } else {
     overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0, width: 1 });
