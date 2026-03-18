@@ -168,11 +168,7 @@ def gamepad_loop():
             time.sleep(0.1)
             continue
 
-        if current_mode == 'keyboard':
-            time.sleep(0.05)
-            continue
-
-        # Buttons — send in both leverless and controller modes
+        # Buttons — always send regardless of mode
         for i in range(joy.get_numbuttons()):
             val = joy.get_button(i)
             if val != prev_buttons.get(i, 0):
