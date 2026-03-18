@@ -231,8 +231,7 @@ function buildLayout() {
   const histEl = document.getElementById('history');
   const max = histCfg().maxEntries ?? 10;
   histEl.style.display = max === 0 ? 'none' : 'flex';
-  if (max > 0 && mode === 'leverless') {
-    // レバーレスモードの初期状態はⓃ
+  if (max > 0) {
     historyEntries = [NEUTRAL];
     histEl.innerHTML = `<div class="history-entry">${NEUTRAL}</div>`;
   } else {
@@ -260,9 +259,8 @@ function getCurrentStateText() {
     if (label) btns.push(label);
   }
 
-  // Ⓝ はレバーレスモードのみ表示（キーボードモードでは何も押していない時は記録しない）
   if (!arrow && btns.length === 0) {
-    return mode === 'leverless' ? NEUTRAL : null;
+    return NEUTRAL;
   }
 
   const parts = [];

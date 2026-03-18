@@ -371,7 +371,7 @@ function setPreviewMode(mode) {
   const hist = document.getElementById('pv-history');
   const max = pvHistMax();
   hist.style.display = max === 0 ? 'none' : 'flex';
-  if (max > 0 && mode === 'leverless') {
+  if (max > 0) {
     pvHistoryEntries = [PV_NEUTRAL];
     hist.innerHTML = `<div class="pv-history-entry">${PV_NEUTRAL}</div>`;
   } else {
@@ -469,7 +469,7 @@ function pvGetCurrentStateText() {
     if (label) btns.push(label);
   }
   if (!arrow && btns.length === 0) {
-    return previewMode === 'leverless' ? PV_NEUTRAL : null;
+    return PV_NEUTRAL;
   }
   const parts = [];
   if (arrow) parts.push(arrow);
