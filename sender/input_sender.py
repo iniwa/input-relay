@@ -27,6 +27,7 @@ ws_connection = None
 running = True
 pressed_keys = set()
 _pressed_keys_lock = threading.Lock()
+_loop = None  # asyncio event loop, set in main()
 
 MODES = ['keyboard', 'leverless', 'controller']
 current_mode = 'keyboard'
@@ -81,7 +82,9 @@ class JsonQueue:
         self._queue = asyncio.Queue()
 
     def put(self, data):
-        self._queue.put_nowait(data)
+        # Must use call_soon_threadsafe when called from non-asyncio threads
+        if _loop is not None:
+            _loop.call_soon_threadsafe(self._queue.put_nowait, data)
 
     async def get(self):
         return await self._queue.get()
@@ -246,6 +249,9 @@ async def sender(host, port):
 
 
 async def main():
+    global _loop
+    _loop = asyncio.get_event_loop()
+
     kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     kb_listener.start()
 
