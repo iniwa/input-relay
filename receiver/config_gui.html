@@ -98,6 +98,15 @@
   .btn-del { background: #6a3a3a; color: #fff; font-size: 11px; padding: 2px 8px; }
   .btn-secondary { background: #3a3a6a; color: #ccc; }
 
+  /* Reorder buttons */
+  .reorder-btns { display: flex; flex-direction: column; gap: 1px; }
+  .reorder-btn {
+    background: #3a3a6a; color: #aaa; border: 1px solid #555;
+    border-radius: 3px; font-size: 10px; padding: 0 5px;
+    cursor: pointer; line-height: 16px;
+  }
+  .reorder-btn:hover { color: #fff; border-color: #64b4ff; }
+
   .status {
     padding: 8px 12px;
     border-radius: 4px;
@@ -122,13 +131,8 @@
     flex-wrap: wrap;
   }
   .preset-bar select {
-    background: #2a2a4a;
-    border: 1px solid #555;
-    color: #fff;
-    padding: 5px 8px;
-    border-radius: 4px;
-    font-size: 13px;
-    min-width: 160px;
+    background: #2a2a4a; border: 1px solid #555; color: #fff;
+    padding: 5px 8px; border-radius: 4px; font-size: 13px; min-width: 160px;
   }
   .preset-bar .sep { color: #555; margin: 0 4px; }
   .btn-load { background: #3a5a8a; color: #fff; font-size: 12px; padding: 5px 12px; }
@@ -136,54 +140,60 @@
   .btn-preset-del { background: #6a3a3a; color: #fff; font-size: 12px; padding: 5px 10px; }
 
   /* Preview */
-  .preview-section {
-    margin-top: 20px;
-  }
+  .preview-section { margin-top: 20px; }
   .preview-header {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 8px;
+    flex-wrap: wrap;
   }
   .preview-header h2 { margin: 0; }
-  .preview-mode-toggle {
-    display: flex;
-    gap: 4px;
-  }
+  .preview-mode-toggle { display: flex; gap: 4px; }
   .preview-mode-btn {
-    padding: 4px 12px;
-    font-size: 12px;
-    background: #2a2a4a;
-    color: #aaa;
-    border: 1px solid #444;
-    border-radius: 4px;
-    cursor: pointer;
+    padding: 4px 12px; font-size: 12px;
+    background: #2a2a4a; color: #aaa;
+    border: 1px solid #444; border-radius: 4px; cursor: pointer;
   }
   .preview-mode-btn.active {
-    background: #3a3a6a;
-    color: #ffd700;
-    border-color: #ffd700;
+    background: #3a3a6a; color: #ffd700; border-color: #ffd700;
+  }
+  .preview-mode-btn.edit-active {
+    background: #6a3a3a; color: #ff6; border-color: #ff6;
   }
   .preview-box {
     background: #111;
     border: 1px solid #333;
     border-radius: 8px;
-    padding: 20px;
-    min-height: 160px;
+    padding: 0;
+    min-height: 400px;
     position: relative;
+    overflow: hidden;
   }
   .preview-hint {
-    font-size: 11px;
-    color: #555;
-    margin-top: 6px;
+    font-size: 11px; color: #555; margin-top: 6px;
   }
 
-  /* Overlay styles (scoped inside preview) */
-  .preview-box .pv-container {
-    display: flex;
-    gap: 24px;
-    align-items: flex-start;
+  /* Layout inputs */
+  .layout-inputs {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; flex-wrap: wrap; font-size: 13px; color: #aaa;
   }
+  .layout-inputs label { min-width: auto; font-size: 13px; color: #888; }
+  .layout-inputs input {
+    width: 60px; padding: 3px 6px; font-size: 13px;
+    background: #2a2a4a; border: 1px solid #555; color: #fff; border-radius: 3px;
+  }
+  .layout-inputs .sep { color: #555; margin: 0 8px; }
+
+  /* Preview panels (absolute positioned within preview-box) */
+  .preview-box .pv-panel {
+    position: absolute;
+    cursor: move;
+  }
+  .preview-box .pv-panel.dragging { opacity: 0.7; }
+
+  /* Overlay styles inside preview */
   .preview-box .pv-grid {
     display: grid;
     gap: 4px;
@@ -194,7 +204,7 @@
     align-items: center;
   }
   .preview-box .pv-key {
-    width: 56px;
+    min-width: 56px;
     height: 56px;
     border: 2px solid rgba(255,255,255,0.5);
     border-radius: 8px;
@@ -212,9 +222,7 @@
   .preview-box .pv-key:hover { border-color: rgba(255,255,255,0.8); }
   .preview-box .pv-key.active {
     background: rgba(255,220,50,0.85);
-    border-color: #ffd700;
-    color: #000;
-    transform: scale(1.05);
+    border-color: #ffd700; color: #000; transform: scale(1.05);
   }
   .preview-box .pv-key.direction {
     border-color: rgba(100,180,255,0.6);
@@ -222,17 +230,26 @@
   .preview-box .pv-key.direction:hover { border-color: rgba(100,180,255,0.9); }
   .preview-box .pv-key.direction.active {
     background: rgba(100,180,255,0.85);
-    border-color: #64b4ff;
-    color: #000;
+    border-color: #64b4ff; color: #000;
   }
+
+  /* Edit mode: buttons show grab cursor */
+  .preview-box.edit-mode .pv-key,
+  .preview-box.edit-mode .pv-dpad-btn {
+    cursor: grab;
+    border-style: dashed;
+  }
+  .preview-box.edit-mode .pv-key:active,
+  .preview-box.edit-mode .pv-dpad-btn:active { cursor: grabbing; }
+
   .preview-box .pv-history {
-    width: 180px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     font-size: 18px;
     font-weight: bold;
     color: #fff;
+    min-width: 180px;
   }
   .preview-box .pv-history-entry {
     background: rgba(0,0,0,0.5);
@@ -242,39 +259,29 @@
   }
   .preview-box .pv-mode-label {
     position: absolute;
-    top: 8px;
-    right: 12px;
+    top: 8px; right: 12px;
     font-size: 11px;
     color: rgba(255,255,255,0.3);
+    z-index: 10;
   }
 
   /* Preview stick */
   .preview-box .pv-stick-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
   }
   .preview-box .pv-stick-label {
-    font-size: 11px;
-    color: rgba(255,255,255,0.5);
+    font-size: 11px; color: rgba(255,255,255,0.5);
   }
   .preview-box .pv-stick-area {
-    width: 80px;
-    height: 80px;
+    width: 80px; height: 80px;
     border: 2px solid rgba(255,255,255,0.35);
-    border-radius: 50%;
-    position: relative;
+    border-radius: 50%; position: relative;
     background: rgba(0,0,0,0.4);
   }
   .preview-box .pv-stick-dot {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
+    width: 22px; height: 22px; border-radius: 50%;
     background: rgba(255,255,255,0.6);
-    position: absolute;
-    left: 50%;
-    top: 50%;
+    position: absolute; left: 50%; top: 50%;
     transform: translate(-50%, -50%);
   }
   .preview-box .pv-dpad-grid {
@@ -283,33 +290,26 @@
     grid-template-rows: repeat(3, 26px);
     gap: 2px;
   }
-  .preview-box .pv-dpad-cell {
-    width: 26px;
-    height: 26px;
-  }
+  .preview-box .pv-dpad-cell { width: 26px; height: 26px; }
   .preview-box .pv-dpad-btn {
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
-    font-weight: bold;
-    border: 2px solid rgba(100,180,255,0.5);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,0.4);
-    color: #fff;
-    cursor: pointer;
-    user-select: none;
+    width: 26px; height: 26px; font-size: 13px; font-weight: bold;
+    border: 2px solid rgba(100,180,255,0.5); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.4); color: #fff;
+    cursor: pointer; user-select: none;
   }
   .preview-box .pv-dpad-btn.active {
     background: rgba(100,180,255,0.85);
-    border-color: #64b4ff;
-    color: #000;
+    border-color: #64b4ff; color: #000;
   }
-  .preview-box .pv-ctrl-buttons {
-    display: grid;
-    gap: 4px;
+  .preview-box .pv-ctrl-buttons { display: grid; gap: 4px; }
+
+  /* Drag ghost */
+  .drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    opacity: 0.7;
+    z-index: 9999;
   }
 </style>
 </head>
@@ -361,7 +361,7 @@
   </div>
   <h2>キーボード表示キー</h2>
   <table>
-    <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
     <tbody id="kb-keys"></tbody>
   </table>
   <div class="btn-row">
@@ -374,7 +374,7 @@
 <div class="tab-content" id="tab-leverless">
   <h2>方向ボタン</h2>
   <table>
-    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
     <tbody id="lv-dirs"></tbody>
   </table>
   <div class="btn-row">
@@ -383,7 +383,7 @@
 
   <h2>アクションボタン</h2>
   <table>
-    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <thead><tr><th>キー</th><th>Gamepad</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
     <tbody id="lv-btns"></tbody>
   </table>
   <div class="btn-row">
@@ -426,7 +426,7 @@
 
   <h2>ボタン</h2>
   <table>
-    <thead><tr><th>Gamepad ID</th><th>ラベル</th><th>行</th><th>列</th><th></th></tr></thead>
+    <thead><tr><th>Gamepad ID</th><th>ラベル</th><th>行</th><th>列</th><th>横幅</th><th>順序</th><th></th></tr></thead>
     <tbody id="ctrl-btns"></tbody>
   </table>
   <div class="btn-row">
@@ -484,15 +484,21 @@
       <button class="preview-mode-btn" data-mode="leverless" onclick="setPreviewMode('leverless')">Leverless</button>
       <button class="preview-mode-btn" data-mode="controller" onclick="setPreviewMode('controller')">Controller</button>
     </div>
+    <button class="preview-mode-btn" id="edit-mode-btn" onclick="toggleEditMode()">レイアウト編集</button>
   </div>
   <div class="preview-box" id="preview-box">
     <div class="pv-mode-label" id="pv-mode-label">KEYBOARD</div>
-    <div class="pv-container">
-      <div class="pv-grid" id="pv-grid"></div>
-      <div class="pv-history" id="pv-history"></div>
-    </div>
+    <div class="pv-grid pv-panel" id="pv-grid"></div>
+    <div class="pv-history pv-panel" id="pv-history"></div>
   </div>
-  <p class="preview-hint">ボタンをクリックで押下テスト / キーボード入力でもテスト可能 (このページにフォーカス時)</p>
+  <p class="preview-hint">ボタンクリックで押下テスト / 「レイアウト編集」でドラッグ配置変更 / パネル背景ドラッグで位置移動</p>
+  <div class="layout-inputs">
+    <label>キー表示 X:</label><input type="number" id="layout-kd-x" value="16" onchange="onLayoutInputChange()">
+    <label>Y:</label><input type="number" id="layout-kd-y" value="16" onchange="onLayoutInputChange()">
+    <span class="sep">|</span>
+    <label>履歴 X:</label><input type="number" id="layout-hi-x" value="600" onchange="onLayoutInputChange()">
+    <label>Y:</label><input type="number" id="layout-hi-y" value="16" onchange="onLayoutInputChange()">
+  </div>
 </div>
 
 <script>
@@ -501,18 +507,21 @@ const PV_NEUTRAL = 'Ⓝ';
 let overlayConfig = {};
 let senderConfig = {};
 let previewMode = 'keyboard';
+let editMode = false;
 let pvPressed = new Set();
 let pvKeyEls = {};
 let pvHistoryEntries = [];
 let pvDirState = { left: false, right: false, up: false, down: false };
 let pvButtonLabels = {};
 
-// Direction key mapping (keyboard / leverless)
 const pvDirKeys = { a: 'left', d: 'right', w: 'up', s: 'down' };
-// Controller hat direction mapping
 const pvHatDirKeys = {
   hat_0_left: 'left', hat_0_right: 'right', hat_0_up: 'up', hat_0_down: 'down'
 };
+
+// --- Drag state ---
+let pvPanelDragState = null;   // panel drag
+let pvBtnDragState = null;     // button drag (edit mode)
 
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
@@ -531,10 +540,100 @@ function showStatus(msg, ok) {
   setTimeout(() => { el.className = 'status'; }, 3000);
 }
 
+// ===== Edit Mode =====
+function toggleEditMode() {
+  editMode = !editMode;
+  const btn = document.getElementById('edit-mode-btn');
+  btn.classList.toggle('edit-active', editMode);
+  btn.textContent = editMode ? '編集モード ON' : 'レイアウト編集';
+  document.getElementById('preview-box').classList.toggle('edit-mode', editMode);
+}
+
+// ===== Preview Panel Drag =====
+function initPvPanelDrag() {
+  ['pv-grid', 'pv-history'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('mousedown', (e) => {
+      // Only drag from panel background, not from buttons
+      if (e.target.closest('.pv-key, .pv-dpad-btn, .pv-stick-area')) return;
+      pvPanelDragState = {
+        el,
+        key: id === 'pv-grid' ? 'keyDisplay' : 'history',
+        startX: e.clientX, startY: e.clientY,
+        origLeft: el.offsetLeft, origTop: el.offsetTop,
+      };
+      el.classList.add('dragging');
+      e.preventDefault();
+    });
+  });
+}
+
+document.addEventListener('mousemove', (e) => {
+  // Panel drag
+  if (pvPanelDragState) {
+    const dx = e.clientX - pvPanelDragState.startX;
+    const dy = e.clientY - pvPanelDragState.startY;
+    pvPanelDragState.el.style.left = Math.max(0, pvPanelDragState.origLeft + dx) + 'px';
+    pvPanelDragState.el.style.top = Math.max(0, pvPanelDragState.origTop + dy) + 'px';
+  }
+  // Button drag (edit mode)
+  if (pvBtnDragState) {
+    pvBtnDragState.ghost.style.left = (e.clientX - pvBtnDragState.offsetX) + 'px';
+    pvBtnDragState.ghost.style.top = (e.clientY - pvBtnDragState.offsetY) + 'px';
+  }
+});
+
+document.addEventListener('mouseup', (e) => {
+  // Panel drag end
+  if (pvPanelDragState) {
+    pvPanelDragState.el.classList.remove('dragging');
+    const key = pvPanelDragState.key;
+    if (!overlayConfig.layout) overlayConfig.layout = {};
+    overlayConfig.layout[key] = {
+      x: pvPanelDragState.el.offsetLeft,
+      y: pvPanelDragState.el.offsetTop,
+    };
+    updateLayoutInputs();
+    pvPanelDragState = null;
+  }
+  // Button drag end (edit mode)
+  if (pvBtnDragState) {
+    const { section, field, index, ghost, el, gridEl } = pvBtnDragState;
+    ghost.remove();
+    el.style.opacity = '';
+
+    // Calculate new row/col from drop position relative to grid
+    const gridRect = gridEl.getBoundingClientRect();
+    const dropX = e.clientX - gridRect.left;
+    const dropY = e.clientY - gridRect.top;
+    const cellSize = 60; // 56px + 4px gap
+    const newCol = Math.max(0, Math.round(dropX / cellSize));
+    const newRow = Math.max(0, Math.round(dropY / cellSize));
+
+    // Update config
+    if (section === 'keyboard') {
+      overlayConfig.keyboard.displayKeys[index].row = newRow;
+      overlayConfig.keyboard.displayKeys[index].col = newCol;
+    } else if (section === 'leverless') {
+      overlayConfig.leverless[field][index].row = newRow;
+      overlayConfig.leverless[field][index].col = newCol;
+    } else if (section === 'controller') {
+      overlayConfig.controller.buttons[index].row = newRow;
+      overlayConfig.controller.buttons[index].col = newCol;
+    }
+
+    pvBtnDragState = null;
+    renderKbKeys();
+    renderLeverless();
+    renderControllerTab();
+    renderPreview();
+  }
+});
+
 // ===== Preview =====
 function setPreviewMode(mode) {
   previewMode = mode;
-  document.querySelectorAll('.preview-mode-btn').forEach(b => {
+  document.querySelectorAll('.preview-mode-btn[data-mode]').forEach(b => {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
   document.getElementById('pv-mode-label').textContent = mode.toUpperCase();
@@ -553,10 +652,45 @@ function setPreviewMode(mode) {
   renderPreview();
 }
 
+function applyPvLayout() {
+  const layout = overlayConfig.layout || {};
+  const kd = layout.keyDisplay || { x: 16, y: 16 };
+  const hi = layout.history || { x: 600, y: 16 };
+  const grid = document.getElementById('pv-grid');
+  const hist = document.getElementById('pv-history');
+  grid.style.left = kd.x + 'px';
+  grid.style.top = kd.y + 'px';
+  hist.style.left = hi.x + 'px';
+  hist.style.top = hi.y + 'px';
+}
+
+function updateLayoutInputs() {
+  const layout = overlayConfig.layout || {};
+  const kd = layout.keyDisplay || { x: 16, y: 16 };
+  const hi = layout.history || { x: 600, y: 16 };
+  document.getElementById('layout-kd-x').value = kd.x;
+  document.getElementById('layout-kd-y').value = kd.y;
+  document.getElementById('layout-hi-x').value = hi.x;
+  document.getElementById('layout-hi-y').value = hi.y;
+}
+
+function onLayoutInputChange() {
+  if (!overlayConfig.layout) overlayConfig.layout = {};
+  overlayConfig.layout.keyDisplay = {
+    x: +document.getElementById('layout-kd-x').value,
+    y: +document.getElementById('layout-kd-y').value,
+  };
+  overlayConfig.layout.history = {
+    x: +document.getElementById('layout-hi-x').value,
+    y: +document.getElementById('layout-hi-y').value,
+  };
+  applyPvLayout();
+}
+
 function renderPreview() {
   const grid = document.getElementById('pv-grid');
   grid.innerHTML = '';
-  grid.className = 'pv-grid';
+  grid.className = 'pv-grid pv-panel';
   pvKeyEls = {};
   pvButtonLabels = {};
 
@@ -567,29 +701,75 @@ function renderPreview() {
   } else {
     renderPreviewController(grid);
   }
+
+  applyPvLayout();
+  initPvPanelDrag();
+}
+
+function pvApplyWidth(el, k) {
+  const w = k.width || 1;
+  el.style.gridColumn = w > 1 ? `${k.col + 1} / span ${w}` : String(k.col + 1);
+}
+
+function pvMakeButton(el, key, section, field, index) {
+  el.addEventListener('mousedown', (e) => {
+    if (editMode) {
+      // Start button drag
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = el.getBoundingClientRect();
+      const ghost = el.cloneNode(true);
+      ghost.className = 'pv-key drag-ghost';
+      ghost.style.width = rect.width + 'px';
+      ghost.style.height = rect.height + 'px';
+      ghost.style.left = rect.left + 'px';
+      ghost.style.top = rect.top + 'px';
+      document.body.appendChild(ghost);
+      el.style.opacity = '0.3';
+
+      let gridEl;
+      if (section === 'controller') {
+        gridEl = el.closest('.pv-ctrl-buttons') || document.getElementById('pv-grid');
+      } else {
+        gridEl = document.getElementById('pv-grid');
+      }
+
+      pvBtnDragState = {
+        el, ghost, section, field, index, gridEl,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+      };
+    } else {
+      pvSimPress(key, el);
+    }
+  });
+  el.addEventListener('mouseup', () => {
+    if (!editMode) pvSimRelease(key, el);
+  });
+  el.addEventListener('mouseleave', () => {
+    if (!editMode && pvPressed.has(key)) pvSimRelease(key, el);
+  });
 }
 
 function renderPreviewKeyboard(grid) {
   const keys = overlayConfig.keyboard?.displayKeys || [];
   if (!keys.length) {
-    grid.innerHTML = '<div style="color:#555;font-size:13px">キーが設定されていません</div>';
+    grid.innerHTML = '<div style="color:#555;font-size:13px;padding:16px">キーが設定されていません</div>';
     return;
   }
-  const maxCol = Math.max(...keys.map(k => k.col)) + 1;
+  const maxCol = Math.max(...keys.map(k => k.col + (k.width || 1)));
   const maxRow = Math.max(...keys.map(k => k.row)) + 1;
   grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
   const kbDirSet = new Set(Object.keys(pvDirKeys));
-  keys.forEach(k => {
+  keys.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key';
     el.textContent = k.label;
     el.style.gridRow = k.row + 1;
-    el.style.gridColumn = k.col + 1;
-    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
-    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
-    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    pvApplyWidth(el, k);
+    pvMakeButton(el, k.key, 'keyboard', 'displayKeys', i);
     grid.appendChild(el);
     pvKeyEls[k.key] = el;
     if (!kbDirSet.has(k.key)) pvButtonLabels[k.key] = k.label;
@@ -601,36 +781,32 @@ function renderPreviewLeverless(grid) {
   const btns = overlayConfig.leverless?.buttons || [];
   const all = [...dirs, ...btns];
   if (!all.length) {
-    grid.innerHTML = '<div style="color:#555;font-size:13px">ボタンが設定されていません</div>';
+    grid.innerHTML = '<div style="color:#555;font-size:13px;padding:16px">ボタンが設定されていません</div>';
     return;
   }
-  const maxCol = Math.max(...all.map(k => k.col)) + 1;
+  const maxCol = Math.max(...all.map(k => k.col + (k.width || 1)));
   const maxRow = Math.max(...all.map(k => k.row)) + 1;
   grid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
   grid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
 
-  dirs.forEach(k => {
+  dirs.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key direction';
     el.textContent = k.label;
     el.style.gridRow = k.row + 1;
-    el.style.gridColumn = k.col + 1;
-    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
-    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
-    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    pvApplyWidth(el, k);
+    pvMakeButton(el, k.key, 'leverless', 'directions', i);
     grid.appendChild(el);
     pvKeyEls[k.key] = el;
   });
 
-  btns.forEach(k => {
+  btns.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'pv-key';
     el.textContent = k.label;
     el.style.gridRow = k.row + 1;
-    el.style.gridColumn = k.col + 1;
-    el.addEventListener('mousedown', () => pvSimPress(k.key, el));
-    el.addEventListener('mouseup', () => pvSimRelease(k.key, el));
-    el.addEventListener('mouseleave', () => { if (pvPressed.has(k.key)) pvSimRelease(k.key, el); });
+    pvApplyWidth(el, k);
+    pvMakeButton(el, k.key, 'leverless', 'buttons', i);
     grid.appendChild(el);
     pvKeyEls[k.key] = el;
     pvButtonLabels[k.key] = k.label;
@@ -642,7 +818,7 @@ function renderPreviewController(grid) {
   const cc = overlayConfig.controller || {};
   const btns = cc.buttons || [];
 
-  // Left stick (static visual)
+  // Left stick
   const lWrap = document.createElement('div');
   lWrap.className = 'pv-stick-wrap';
   const lArea = document.createElement('div');
@@ -655,16 +831,16 @@ function renderPreviewController(grid) {
   lWrap.appendChild(lLabel);
   grid.appendChild(lWrap);
 
-  // D-pad (clickable)
+  // D-pad
   const dpadWrap = document.createElement('div');
   dpadWrap.className = 'pv-stick-wrap';
   const dpad = document.createElement('div');
   dpad.className = 'pv-dpad-grid';
   const hatBtns = [
-    { key: 'hat_0_up',    label: '↑', r: 0, c: 1 },
-    { key: 'hat_0_left',  label: '←', r: 1, c: 0 },
+    { key: 'hat_0_up', label: '↑', r: 0, c: 1 },
+    { key: 'hat_0_left', label: '←', r: 1, c: 0 },
     { key: 'hat_0_right', label: '→', r: 1, c: 2 },
-    { key: 'hat_0_down',  label: '↓', r: 2, c: 1 },
+    { key: 'hat_0_down', label: '↓', r: 2, c: 1 },
   ];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
@@ -673,9 +849,9 @@ function renderPreviewController(grid) {
         const el = document.createElement('div');
         el.className = 'pv-dpad-btn';
         el.textContent = hb.label;
-        el.addEventListener('mousedown', () => pvSimPress(hb.key, el));
-        el.addEventListener('mouseup', () => pvSimRelease(hb.key, el));
-        el.addEventListener('mouseleave', () => { if (pvPressed.has(hb.key)) pvSimRelease(hb.key, el); });
+        el.addEventListener('mousedown', () => { if (!editMode) pvSimPress(hb.key, el); });
+        el.addEventListener('mouseup', () => { if (!editMode) pvSimRelease(hb.key, el); });
+        el.addEventListener('mouseleave', () => { if (!editMode && pvPressed.has(hb.key)) pvSimRelease(hb.key, el); });
         dpad.appendChild(el);
         pvKeyEls[hb.key] = el;
       } else {
@@ -692,24 +868,22 @@ function renderPreviewController(grid) {
   dpadWrap.appendChild(dpadLabel);
   grid.appendChild(dpadWrap);
 
-  // Face buttons (clickable)
+  // Face buttons
   if (btns.length > 0) {
-    const maxCol = Math.max(...btns.map(b => b.col)) + 1;
+    const maxCol = Math.max(...btns.map(b => b.col + (b.width || 1)));
     const maxRow = Math.max(...btns.map(b => b.row)) + 1;
     const btnGrid = document.createElement('div');
     btnGrid.className = 'pv-ctrl-buttons';
     btnGrid.style.gridTemplateColumns = `repeat(${maxCol}, 56px)`;
     btnGrid.style.gridTemplateRows = `repeat(${maxRow}, 56px)`;
-    btns.forEach(b => {
+    btns.forEach((b, i) => {
       const el = document.createElement('div');
       el.className = 'pv-key';
       el.textContent = b.label;
       el.style.gridRow = b.row + 1;
-      el.style.gridColumn = b.col + 1;
+      pvApplyWidth(el, b);
       const id = b.gamepad || b.label;
-      el.addEventListener('mousedown', () => pvSimPress(id, el));
-      el.addEventListener('mouseup', () => pvSimRelease(id, el));
-      el.addEventListener('mouseleave', () => { if (pvPressed.has(id)) pvSimRelease(id, el); });
+      pvMakeButton(el, id, 'controller', 'buttons', i);
       btnGrid.appendChild(el);
       pvKeyEls[id] = el;
       pvButtonLabels[id] = b.label;
@@ -717,7 +891,7 @@ function renderPreviewController(grid) {
     grid.appendChild(btnGrid);
   }
 
-  // Right stick (static visual)
+  // Right stick
   if (cc.rightStick) {
     const rWrap = document.createElement('div');
     rWrap.className = 'pv-stick-wrap';
@@ -740,9 +914,7 @@ function pvGetCurrentStateText() {
     const label = pvButtonLabels[key];
     if (label) btns.push(label);
   }
-  if (!arrow && btns.length === 0) {
-    return PV_NEUTRAL;
-  }
+  if (!arrow && btns.length === 0) return PV_NEUTRAL;
   const parts = [];
   if (arrow) parts.push(arrow);
   parts.push(...btns);
@@ -759,7 +931,6 @@ function pvRecordCurrentState() {
 function pvSimPress(key, el) {
   pvPressed.add(key);
   el.classList.add('active');
-  // Direction handling
   if (previewMode === 'controller') {
     const dirName = pvHatDirKeys[key];
     if (dirName) pvDirState[dirName] = true;
@@ -826,6 +997,29 @@ document.addEventListener('keyup', (e) => {
   }
 });
 
+// ===== Reorder =====
+function moveItem(arr, index, dir) {
+  const newIndex = index + dir;
+  if (newIndex < 0 || newIndex >= arr.length) return;
+  [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+}
+
+function reorderKb(i, dir) {
+  moveItem(overlayConfig.keyboard.displayKeys, i, dir);
+  renderKbKeys();
+}
+
+function reorderLv(field, i, dir) {
+  moveItem(overlayConfig.leverless[field], i, dir);
+  renderLeverless();
+}
+
+function reorderCtrl(i, dir) {
+  moveItem(overlayConfig.controller.buttons, i, dir);
+  renderControllerTab();
+  renderPreview();
+}
+
 // ===== Config editing =====
 function renderKbKeys() {
   const tbody = document.getElementById('kb-keys');
@@ -836,6 +1030,13 @@ function renderKbKeys() {
       <td><input value="${k.label}" data-i="${i}" data-f="label"></td>
       <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row"></td>
       <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" value="${k.width || 1}" min="1" data-i="${i}" data-f="width"></td>
+      <td>
+        <div class="reorder-btns">
+          <button class="reorder-btn" onclick="reorderKb(${i},-1)">▲</button>
+          <button class="reorder-btn" onclick="reorderKb(${i},1)">▼</button>
+        </div>
+      </td>
       <td><button class="btn-del" onclick="delKbKey(${i})">✕</button></td>
     </tr>
   `).join('');
@@ -844,7 +1045,7 @@ function renderKbKeys() {
       const idx = +inp.dataset.i;
       const field = inp.dataset.f;
       let val = inp.value;
-      if (field === 'row' || field === 'col') val = +val;
+      if (field === 'row' || field === 'col' || field === 'width') val = +val;
       overlayConfig.keyboard.displayKeys[idx][field] = val;
       renderPreview();
     });
@@ -854,7 +1055,7 @@ function renderKbKeys() {
 
 function addKbKey() {
   if (!overlayConfig.keyboard) overlayConfig.keyboard = { displayKeys: [] };
-  overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0 });
+  overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0, width: 1 });
   renderKbKeys();
 }
 function delKbKey(i) {
@@ -877,6 +1078,13 @@ function renderLvTable(tbodyId, items, field) {
       <td><input value="${k.label}" data-i="${i}" data-f="label" data-sec="${field}"></td>
       <td><input class="narrow" type="number" value="${k.row}" data-i="${i}" data-f="row" data-sec="${field}"></td>
       <td><input class="narrow" type="number" value="${k.col}" data-i="${i}" data-f="col" data-sec="${field}"></td>
+      <td><input class="narrow" type="number" value="${k.width || 1}" min="1" data-i="${i}" data-f="width" data-sec="${field}"></td>
+      <td>
+        <div class="reorder-btns">
+          <button class="reorder-btn" onclick="reorderLv('${field}',${i},-1)">▲</button>
+          <button class="reorder-btn" onclick="reorderLv('${field}',${i},1)">▼</button>
+        </div>
+      </td>
       <td><button class="btn-del" onclick="delLv('${field}',${i})">✕</button></td>
     </tr>
   `).join('');
@@ -886,7 +1094,7 @@ function renderLvTable(tbodyId, items, field) {
       const f = inp.dataset.f;
       const sec = inp.dataset.sec;
       let val = inp.value;
-      if (f === 'row' || f === 'col') val = +val;
+      if (f === 'row' || f === 'col' || f === 'width') val = +val;
       overlayConfig.leverless[sec][idx][f] = val;
       renderPreview();
     });
@@ -895,12 +1103,12 @@ function renderLvTable(tbodyId, items, field) {
 
 function addLvDir() {
   if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
-  overlayConfig.leverless.directions.push({ key: '', gamepad: '', label: '', row: 0, col: 0 });
+  overlayConfig.leverless.directions.push({ key: '', gamepad: '', label: '', row: 0, col: 0, width: 1 });
   renderLeverless();
 }
 function addLvBtn() {
   if (!overlayConfig.leverless) overlayConfig.leverless = { directions: [], buttons: [] };
-  overlayConfig.leverless.buttons.push({ key: '', gamepad: '', label: '', row: 0, col: 0 });
+  overlayConfig.leverless.buttons.push({ key: '', gamepad: '', label: '', row: 0, col: 0, width: 1 });
   renderLeverless();
 }
 function delLv(field, i) {
@@ -908,7 +1116,7 @@ function delLv(field, i) {
   renderLeverless();
 }
 
-// Controller tab editing
+// Controller tab
 function renderControllerTab() {
   const cc = overlayConfig.controller || {};
   document.getElementById('ctrl-ls-x').value = cc.leftStick?.axisX ?? 0;
@@ -926,6 +1134,13 @@ function renderControllerTab() {
       <td><input value="${b.label}" data-i="${i}" data-f="label"></td>
       <td><input class="narrow" type="number" value="${b.row}" data-i="${i}" data-f="row"></td>
       <td><input class="narrow" type="number" value="${b.col}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" value="${b.width || 1}" min="1" data-i="${i}" data-f="width"></td>
+      <td>
+        <div class="reorder-btns">
+          <button class="reorder-btn" onclick="reorderCtrl(${i},-1)">▲</button>
+          <button class="reorder-btn" onclick="reorderCtrl(${i},1)">▼</button>
+        </div>
+      </td>
       <td><button class="btn-del" onclick="delCtrlBtn(${i})">✕</button></td>
     </tr>
   `).join('');
@@ -934,7 +1149,7 @@ function renderControllerTab() {
       const idx = +inp.dataset.i;
       const f = inp.dataset.f;
       let val = inp.value;
-      if (f === 'row' || f === 'col') val = +val;
+      if (f === 'row' || f === 'col' || f === 'width') val = +val;
       if (!overlayConfig.controller) overlayConfig.controller = {};
       if (!overlayConfig.controller.buttons) overlayConfig.controller.buttons = [];
       overlayConfig.controller.buttons[idx][f] = val;
@@ -946,7 +1161,7 @@ function renderControllerTab() {
 function addCtrlBtn() {
   if (!overlayConfig.controller) overlayConfig.controller = { leftStick: {axisX:0,axisY:1}, rightStick: {axisX:2,axisY:3}, deadzone: 0.15, directionSource: 'leftStick', buttons: [] };
   if (!overlayConfig.controller.buttons) overlayConfig.controller.buttons = [];
-  overlayConfig.controller.buttons.push({ gamepad: '', label: '', row: 0, col: 0 });
+  overlayConfig.controller.buttons.push({ gamepad: '', label: '', row: 0, col: 0, width: 1 });
   renderControllerTab();
   renderPreview();
 }
@@ -983,17 +1198,28 @@ async function saveOverlayConfig() {
   overlayConfig.controller.deadzone = +document.getElementById('ctrl-deadzone').value;
   overlayConfig.controller.directionSource = document.getElementById('ctrl-dir-src').value;
 
+  // Sync layout from inputs
+  if (!overlayConfig.layout) overlayConfig.layout = {};
+  overlayConfig.layout.keyDisplay = {
+    x: +document.getElementById('layout-kd-x').value,
+    y: +document.getElementById('layout-kd-y').value,
+  };
+  overlayConfig.layout.history = {
+    x: +document.getElementById('layout-hi-x').value,
+    y: +document.getElementById('layout-hi-y').value,
+  };
+
   overlayConfig.inputHistory = {
-    keyboard:  {
-      maxEntries:   +document.getElementById('hist-kb-max').value,
+    keyboard: {
+      maxEntries:    +document.getElementById('hist-kb-max').value,
       idleTimeoutMs: +document.getElementById('hist-kb-idle').value,
     },
     leverless: {
-      maxEntries:   +document.getElementById('hist-lv-max').value,
+      maxEntries:    +document.getElementById('hist-lv-max').value,
       idleTimeoutMs: +document.getElementById('hist-lv-idle').value,
     },
     controller: {
-      maxEntries:   +document.getElementById('hist-ct-max').value,
+      maxEntries:    +document.getElementById('hist-ct-max').value,
       idleTimeoutMs: +document.getElementById('hist-ct-idle').value,
     },
   };
@@ -1117,6 +1343,7 @@ async function init() {
   renderLeverless();
   renderControllerTab();
   renderHistory();
+  updateLayoutInputs();
   renderPreview();
   await fetchPresets();
 }
