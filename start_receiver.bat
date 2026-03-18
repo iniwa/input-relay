@@ -14,8 +14,8 @@ netsh advfirewall firewall show rule name="InputDisplay-WS" >nul 2>&1 || (
     echo     Added rule: port 8765 (WebSocket)
 )
 netsh advfirewall firewall show rule name="InputDisplay-HTTP" >nul 2>&1 || (
-    netsh advfirewall firewall add rule name="InputDisplay-HTTP" dir=in action=allow protocol=TCP localport=8080 >nul
-    echo     Added rule: port 8080 (HTTP)
+    netsh advfirewall firewall add rule name="InputDisplay-HTTP" dir=in action=allow protocol=TCP localport=8081 >nul
+    echo     Added rule: port 8081 (HTTP)
 )
 echo.
 
@@ -33,8 +33,8 @@ echo.
 
 echo [4/4] Starting server ...
 echo.
-start http://localhost:8080/
-python receiver\input_server.py
+start http://localhost:8081/
+python receiver\input_server.py --http-port 8081
 
 echo.
 echo Server stopped. Press any key to close.

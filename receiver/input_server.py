@@ -157,7 +157,13 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
 
 def start_http_server(port):
-    server = HTTPServer(("0.0.0.0", port), OverlayHandler)
+    try:
+        server = HTTPServer(("0.0.0.0", port), OverlayHandler)
+    except OSError as e:
+        print(f"[HTTP] ERROR: Failed to bind port {port}: {e}")
+        print(f"[HTTP] Another process may be using port {port}.")
+        print(f"[HTTP] Run: netstat -ano | findstr :{port}")
+        return
     print(f"[HTTP] Config GUI: http://localhost:{port}/")
     print(f"[HTTP] Overlay:    http://localhost:{port}/overlay.html")
     server.serve_forever()
@@ -226,7 +232,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Input Server")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--http-port", type=int, default=8080)
+    parser.add_argument("--http-port", type=int, default=8081)
     args = parser.parse_args()
 
     try:
