@@ -182,9 +182,14 @@
     border: 1px solid #333;
     border-radius: 8px;
     padding: 0;
-    min-height: 400px;
+    width: 960px;
+    height: 540px;
     position: relative;
     overflow: hidden;
+    flex-shrink: 0;
+  }
+  .preview-canvas-label {
+    font-size: 11px; color: #556; margin-bottom: 4px;
   }
   .preview-hint {
     font-size: 11px; color: #555; margin-top: 6px;
@@ -206,6 +211,8 @@
   .preview-box .pv-panel {
     position: absolute;
     cursor: move;
+    transform: scale(0.375);
+    transform-origin: top left;
   }
   .preview-box .pv-panel.dragging { opacity: 0.7; }
 
@@ -656,6 +663,7 @@
     <button class="preview-mode-btn" onclick="switchOverlayMode('leverless')">LV切替</button>
     <button class="preview-mode-btn" onclick="switchOverlayMode('controller')">CT切替</button>
   </div>
+  <p class="preview-canvas-label">OBSキャンバス: 2560×1440 @ 37.5%</p>
   <div class="preview-box" id="preview-box">
     <div class="pv-mode-label" id="pv-mode-label">KEYBOARD</div>
     <div class="pv-grid pv-panel" id="pv-grid"></div>
@@ -756,8 +764,8 @@ document.addEventListener('mousemove', (e) => {
   if (pvPanelDragState) {
     const dx = e.clientX - pvPanelDragState.startX;
     const dy = e.clientY - pvPanelDragState.startY;
-    pvPanelDragState.el.style.left = Math.max(0, pvPanelDragState.origLeft + dx) + 'px';
-    pvPanelDragState.el.style.top = Math.max(0, pvPanelDragState.origTop + dy) + 'px';
+    pvPanelDragState.el.style.left = Math.min(960, Math.max(0, pvPanelDragState.origLeft + dx)) + 'px';
+    pvPanelDragState.el.style.top  = Math.min(540, Math.max(0, pvPanelDragState.origTop  + dy)) + 'px';
   }
   // Button drag (edit mode)
   if (pvBtnDragState) {
@@ -772,9 +780,10 @@ document.addEventListener('mouseup', (e) => {
     pvPanelDragState.el.classList.remove('dragging');
     const key = pvPanelDragState.key;
     if (!overlayConfig.layout) overlayConfig.layout = {};
+    const scale = 960 / 2560;  // 0.375
     overlayConfig.layout[key] = {
-      x: pvPanelDragState.el.offsetLeft,
-      y: pvPanelDragState.el.offsetTop,
+      x: Math.round(pvPanelDragState.el.offsetLeft / scale),
+      y: Math.round(pvPanelDragState.el.offsetTop  / scale),
     };
     updateLayoutInputs();
     pvPanelDragState = null;
@@ -933,15 +942,16 @@ function setPreviewMode(mode) {
 }
 
 function applyPvLayout() {
+  const scale = 960 / 2560;  // 0.375 (3/8)
   const layout = overlayConfig.layout || {};
   const kd = layout.keyDisplay || { x: 16, y: 16 };
   const hi = layout.history || { x: 600, y: 16 };
   const grid = document.getElementById('pv-grid');
   const hist = document.getElementById('pv-history');
-  grid.style.left = kd.x + 'px';
-  grid.style.top = kd.y + 'px';
-  hist.style.left = hi.x + 'px';
-  hist.style.top = hi.y + 'px';
+  grid.style.left = (kd.x * scale) + 'px';
+  grid.style.top  = (kd.y * scale) + 'px';
+  hist.style.left = (hi.x * scale) + 'px';
+  hist.style.top  = (hi.y * scale) + 'px';
 }
 
 function updateLayoutInputs() {

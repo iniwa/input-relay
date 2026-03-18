@@ -300,26 +300,26 @@
     "directionSource": "leftStick",
     "buttons": [
       {
-        "gamepad": "btn_0",
-        "label": "□",
+        "gamepad": "btn_2",
+        "label": "X",
         "row": 1,
         "col": 0
       },
       {
-        "gamepad": "btn_1",
-        "label": "✕",
+        "gamepad": "btn_0",
+        "label": "A",
         "row": 2,
         "col": 1
       },
       {
-        "gamepad": "btn_2",
-        "label": "○",
-        "row": 1,
+        "gamepad": "btn_3",
+        "label": "Y",
+        "row": 0,
         "col": 1
       },
       {
-        "gamepad": "btn_3",
-        "label": "△",
+        "gamepad": "btn_1",
+        "label": "B",
         "row": 1,
         "col": 2
       },
