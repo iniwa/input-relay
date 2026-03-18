@@ -134,7 +134,8 @@
 <div id="mode-label">KEYBOARD</div>
 
 <script>
-const WS_PORT = location.port || '8765';
+const params = new URLSearchParams(location.search);
+const WS_PORT = params.get('ws') || '8765';
 const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
 
 const NEUTRAL = 'Ⓝ';
