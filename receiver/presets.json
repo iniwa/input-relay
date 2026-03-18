@@ -785,57 +785,64 @@
           "axisX": 2,
           "axisY": 3
         },
-        "deadzone": 0.15,
+        "deadzone": 0,
         "directionSource": "leftStick",
         "buttons": [
           {
-            "gamepad": "btn_0",
-            "label": "□",
-            "row": 0,
+            "gamepad": "btn_2",
+            "label": "X",
+            "row": 1,
             "col": 0
           },
           {
-            "gamepad": "btn_1",
-            "label": "✕",
-            "row": 1,
-            "col": 1
-          },
-          {
-            "gamepad": "btn_2",
-            "label": "○",
-            "row": 0,
+            "gamepad": "btn_0",
+            "label": "A",
+            "row": 2,
             "col": 1
           },
           {
             "gamepad": "btn_3",
-            "label": "△",
+            "label": "Y",
             "row": 0,
+            "col": 1
+          },
+          {
+            "gamepad": "btn_1",
+            "label": "B",
+            "row": 1,
             "col": 2
           },
           {
             "gamepad": "btn_4",
             "label": "L1",
-            "row": 0,
+            "row": 1,
             "col": 3
           },
           {
             "gamepad": "btn_5",
             "label": "R1",
-            "row": 0,
-            "col": 4
-          },
-          {
-            "gamepad": "btn_6",
-            "label": "L2",
-            "row": 1,
-            "col": 3
-          },
-          {
-            "gamepad": "btn_7",
-            "label": "R2",
             "row": 1,
             "col": 4
           }
+        ],
+        "l2Axis": 4,
+        "r2Axis": 5,
+        "stickPositions": {
+          "leftStick": {
+            "row": 0,
+            "col": 0
+          },
+          "rightStick": {
+            "row": 0,
+            "col": 0
+          }
+        },
+        "shoulderLeft": "btn_4",
+        "shoulderRight": "btn_5",
+        "centerButtons": [
+          "btn_6",
+          "btn_8",
+          "btn_7"
         ]
       }
     }
