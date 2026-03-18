@@ -358,19 +358,19 @@
   },
   "layout": {
     "keyDisplay": {
-      "x": 100,
-      "y": 100,
-      "scale": 1.5
+      "x": 155,
+      "y": 784,
+      "scale": 1
     },
     "history": {
-      "x": 491,
-      "y": 315,
+      "x": 32,
+      "y": 875,
       "scale": 1
     }
   },
   "inputHistory": {
     "keyboard": {
-      "maxEntries": 15,
+      "maxEntries": 0,
       "idleTimeoutMs": 3000
     },
     "leverless": {
@@ -378,7 +378,7 @@
       "idleTimeoutMs": 3000
     },
     "controller": {
-      "maxEntries": 15,
+      "maxEntries": 0,
       "idleTimeoutMs": 3000
     }
   }

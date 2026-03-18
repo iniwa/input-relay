@@ -141,7 +141,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 presets = load_presets()
                 if ptype not in presets:
                     presets[ptype] = {}
-                presets[ptype][name] = {ptype: data[ptype]}
+                presets[ptype][name] = {ptype: data[ptype], "layout": data.get("layout", {})}
                 save_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:

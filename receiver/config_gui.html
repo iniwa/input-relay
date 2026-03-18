@@ -670,6 +670,7 @@
   </div>
   <p class="preview-hint">ボタンクリックで押下テスト / 「レイアウト編集」でドラッグ配置変更 / パネル背景ドラッグで位置移動</p>
   <div class="layout-inputs">
+    <span id="layout-mode-label" style="font-size:12px;color:#ffd700;font-weight:bold;margin-right:8px">KEYBOARD</span>
     <label>キー表示 X:</label><input type="number" id="layout-kd-x" value="16" onchange="onLayoutInputChange()">
     <label>Y:</label><input type="number" id="layout-kd-y" value="16" onchange="onLayoutInputChange()">
     <label style="margin-left:8px">倍率:</label><input type="number" id="layout-kd-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:60px">
@@ -783,8 +784,9 @@ document.addEventListener('mouseup', (e) => {
     const key = pvPanelDragState.key;
     if (!overlayConfig.layout) overlayConfig.layout = {};
     const pvScale = 960 / 2560;  // 0.375
-    const prevScale = overlayConfig.layout?.[key]?.scale ?? 1;
-    overlayConfig.layout[key] = {
+    const prevScale = overlayConfig.layout?.[previewMode]?.[key]?.scale ?? 1;
+    if (!overlayConfig.layout[previewMode]) overlayConfig.layout[previewMode] = {};
+    overlayConfig.layout[previewMode][key] = {
       x:     Math.round(pvPanelDragState.el.offsetLeft / pvScale),
       y:     Math.round(pvPanelDragState.el.offsetTop  / pvScale),
       scale: prevScale,
@@ -930,6 +932,7 @@ function setPreviewMode(mode) {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
   document.getElementById('pv-mode-label').textContent = mode.toUpperCase();
+  updateLayoutInputs();
   pvPressed.clear();
   pvDirState = { left: false, right: false, up: false, down: false };
   pvHistoryEntries = [];
@@ -947,9 +950,9 @@ function setPreviewMode(mode) {
 
 function applyPvLayout() {
   const pvScale = 960 / 2560;  // 0.375 (3/8)
-  const layout = overlayConfig.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
-  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
+  const ml = overlayConfig.layout?.[previewMode] || {};
+  const kd = ml.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = ml.history    || { x: 600, y: 16, scale: 1 };
   const grid = document.getElementById('pv-grid');
   const hist = document.getElementById('pv-history');
   grid.style.left      = (kd.x * pvScale) + 'px';
@@ -961,25 +964,28 @@ function applyPvLayout() {
 }
 
 function updateLayoutInputs() {
-  const layout = overlayConfig.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
-  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
+  const ml = overlayConfig.layout?.[previewMode] || {};
+  const kd = ml.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = ml.history    || { x: 600, y: 16, scale: 1 };
   document.getElementById('layout-kd-x').value     = kd.x;
   document.getElementById('layout-kd-y').value     = kd.y;
   document.getElementById('layout-kd-scale').value = kd.scale ?? 1;
   document.getElementById('layout-hi-x').value     = hi.x;
   document.getElementById('layout-hi-y').value     = hi.y;
   document.getElementById('layout-hi-scale').value = hi.scale ?? 1;
+  const lbl = document.getElementById('layout-mode-label');
+  if (lbl) lbl.textContent = previewMode.toUpperCase();
 }
 
 function onLayoutInputChange() {
   if (!overlayConfig.layout) overlayConfig.layout = {};
-  overlayConfig.layout.keyDisplay = {
+  if (!overlayConfig.layout[previewMode]) overlayConfig.layout[previewMode] = {};
+  overlayConfig.layout[previewMode].keyDisplay = {
     x:     +document.getElementById('layout-kd-x').value,
     y:     +document.getElementById('layout-kd-y').value,
     scale: +document.getElementById('layout-kd-scale').value,
   };
-  overlayConfig.layout.history = {
+  overlayConfig.layout[previewMode].history = {
     x:     +document.getElementById('layout-hi-x').value,
     y:     +document.getElementById('layout-hi-y').value,
     scale: +document.getElementById('layout-hi-scale').value,
@@ -1560,14 +1566,15 @@ async function saveOverlayConfig() {
   overlayConfig.controller.centerButtons = document.getElementById('ctrl-center-btns').value
     .split(',').map(s => s.trim()).filter(Boolean);
 
-  // Sync layout from inputs
+  // Sync current preview mode layout from inputs
   if (!overlayConfig.layout) overlayConfig.layout = {};
-  overlayConfig.layout.keyDisplay = {
+  if (!overlayConfig.layout[previewMode]) overlayConfig.layout[previewMode] = {};
+  overlayConfig.layout[previewMode].keyDisplay = {
     x:     +document.getElementById('layout-kd-x').value,
     y:     +document.getElementById('layout-kd-y').value,
     scale: +document.getElementById('layout-kd-scale').value,
   };
-  overlayConfig.layout.history = {
+  overlayConfig.layout[previewMode].history = {
     x:     +document.getElementById('layout-hi-x').value,
     y:     +document.getElementById('layout-hi-y').value,
     scale: +document.getElementById('layout-hi-scale').value,
@@ -1708,15 +1715,21 @@ function loadPreset(tab) {
   if (p.keyboard)   overlayConfig.keyboard   = JSON.parse(JSON.stringify(p.keyboard));
   if (p.leverless)  overlayConfig.leverless  = JSON.parse(JSON.stringify(p.leverless));
   if (p.controller) overlayConfig.controller = JSON.parse(JSON.stringify(p.controller));
+  if (p.layout) {
+    if (!overlayConfig.layout) overlayConfig.layout = {};
+    overlayConfig.layout[type] = JSON.parse(JSON.stringify(p.layout));
+  }
   if (type === 'keyboard')   renderKbKeys();
   if (type === 'leverless')  renderLeverless();
   if (type === 'controller') renderControllerTab();
+  updateLayoutInputs();
+  applyPvLayout();
   showStatus(`プリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
 }
 
 async function savePresetData(name, tab) {
   const type = getTabType(tab);
-  const payload = { name, type, [type]: overlayConfig[type] || {} };
+  const payload = { name, type, [type]: overlayConfig[type] || {}, layout: overlayConfig.layout?.[type] || {} };
   const res = await fetch('/api/presets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1732,7 +1745,7 @@ async function savePreset(tab) {
   const data = await savePresetData(name, tab);
   if (data.ok) {
     const type = getTabType(tab);
-    presetsData[type][name] = { [type]: overlayConfig[type] };
+    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type] };
     renderPresetSelect();
     getPresetSelectForTab(tab).value = name;
     nameInput.value = '';
@@ -1750,7 +1763,7 @@ async function overwritePreset(tab) {
   const data = await savePresetData(name, tab);
   if (data.ok) {
     const type = getTabType(tab);
-    presetsData[type][name] = { [type]: overlayConfig[type] };
+    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type] };
     showStatus(`プリセット「${name}」を上書き保存しました`, true);
   } else {
     showStatus('エラー: ' + data.error, false);
@@ -1785,6 +1798,21 @@ async function init() {
   ]);
   overlayConfig = await cfgRes.json();
   senderConfig = await sndRes.json();
+
+  // Migrate flat layout → per-mode layout
+  const _l = overlayConfig.layout || {};
+  if (_l.keyDisplay !== undefined || _l.history !== undefined) {
+    const flat = { keyDisplay: _l.keyDisplay || { x: 16, y: 16, scale: 1 }, history: _l.history || { x: 600, y: 16, scale: 1 } };
+    overlayConfig.layout = {
+      keyboard:   JSON.parse(JSON.stringify(flat)),
+      leverless:  JSON.parse(JSON.stringify(flat)),
+      controller: JSON.parse(JSON.stringify(flat)),
+    };
+  }
+  ['keyboard', 'leverless', 'controller'].forEach(m => {
+    if (!overlayConfig.layout) overlayConfig.layout = {};
+    if (!overlayConfig.layout[m]) overlayConfig.layout[m] = { keyDisplay: { x: 16, y: 16, scale: 1 }, history: { x: 600, y: 16, scale: 1 } };
+  });
 
   document.getElementById('sender-host').value = senderConfig.host || '';
   document.getElementById('sender-port').value = senderConfig.port || 8765;

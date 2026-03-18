@@ -269,9 +269,11 @@ document.addEventListener('mouseup', () => {
 });
 
 function applyLayout() {
-  const layout = config?.layout || {};
-  const kd = layout.keyDisplay || { x: 16, y: 16, scale: 1 };
-  const hi = layout.history  || { x: 600, y: 16, scale: 1 };
+  const layoutAll = config?.layout || {};
+  // Per-mode layout (new) or flat fallback (old)
+  const ml = layoutAll[mode] || (layoutAll.keyDisplay ? layoutAll : {});
+  const kd = ml.keyDisplay || { x: 16, y: 16, scale: 1 };
+  const hi = ml.history    || { x: 600, y: 16, scale: 1 };
   const kdEl = document.getElementById('key-display');
   kdEl.style.left            = kd.x + 'px';
   kdEl.style.top             = kd.y + 'px';
