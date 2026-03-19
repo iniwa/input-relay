@@ -698,7 +698,7 @@
 </div>
 
 <script>
-const PV_NEUTRAL = '\u24C3';
+const PV_NEUTRAL = 'N';
 
 let overlayConfig = {};
 let senderConfig = {};
@@ -1302,11 +1302,9 @@ function pvGetCurrentStateText() {
     const label = pvButtonLabels[key];
     if (label) btns.push(label);
   }
-  if (!arrow && btns.length === 0) return PV_NEUTRAL;
-  const parts = [];
-  if (arrow) parts.push(arrow);
-  parts.push(...btns);
-  return parts.join('+');
+  const dirPart = arrow || PV_NEUTRAL;
+  if (btns.length === 0) return dirPart;
+  return [dirPart, ...btns].join('+');
 }
 
 function pvRecordCurrentState() {

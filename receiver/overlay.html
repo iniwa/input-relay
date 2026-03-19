@@ -201,7 +201,7 @@ const WS_PORT = params.get('ws') || '8765';
 const WS_URL = `ws://${location.hostname}:${WS_PORT}/browser`;
 const DISPLAY_MODE = window.__DISPLAY_MODE__ || params.get('mode') || 'all'; // 'all', 'input', 'history'
 
-const NEUTRAL = '\u24C3';
+const NEUTRAL = 'N';
 
 let config = null;
 let mode = 'keyboard';
@@ -692,11 +692,9 @@ function getCurrentStateText() {
     const label = buttonLabels[key];
     if (label) btns.push(label);
   }
-  if (!arrow && btns.length === 0) return NEUTRAL;
-  const parts = [];
-  if (arrow) parts.push(arrow);
-  parts.push(...btns);
-  return parts.join('+');
+  const dirPart = arrow || NEUTRAL;
+  if (btns.length === 0) return dirPart;
+  return [dirPart, ...btns].join('+');
 }
 
 function recordCurrentState() {

@@ -376,8 +376,8 @@
         "scale": 1
       },
       "history": {
-        "x": 53,
-        "y": 757,
+        "x": 32,
+        "y": 304,
         "scale": 1.5
       }
     },
@@ -403,7 +403,7 @@
     "leverless": {
       "maxEntries": 15,
       "idleTimeoutMs": 3000,
-      "flip": true
+      "flip": false
     },
     "controller": {
       "maxEntries": 0,
