@@ -598,6 +598,11 @@
     <input type="number" id="display-delay" value="0" min="0" step="10">
     <span style="font-size:12px;color:#666">映像の遅延に合わせてキー表示・履歴を遅らせる</span>
   </div>
+  <div class="form-group">
+    <label>余韻点灯時間 (ms)</label>
+    <input type="number" id="afterglow-ms" value="50" min="0" step="10">
+    <span style="font-size:12px;color:#666">キーを離した後、薄く点灯し続ける時間。0 = 無効</span>
+  </div>
 
   <h2>Keyboard モード</h2>
   <div class="form-group">
@@ -1556,7 +1561,8 @@ function delCtrlBtn(i) {
 }
 
 function renderHistory() {
-  document.getElementById('display-delay').value = overlayConfig.displayDelayMs ?? 0;
+  document.getElementById('display-delay').value  = overlayConfig.displayDelayMs ?? 0;
+  document.getElementById('afterglow-ms').value   = overlayConfig.afterglowMs    ?? 50;
   const h = overlayConfig.inputHistory || {};
   const kb = h.keyboard || {};
   const lv = h.leverless || {};
@@ -1607,6 +1613,7 @@ async function saveOverlayConfig() {
   };
 
   overlayConfig.displayDelayMs = +document.getElementById('display-delay').value;
+  overlayConfig.afterglowMs    = +document.getElementById('afterglow-ms').value;
 
   overlayConfig.inputHistory = {
     keyboard: {

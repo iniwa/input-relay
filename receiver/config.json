@@ -390,5 +390,6 @@
       "flip": false
     }
   },
-  "displayDelayMs": 10
+  "displayDelayMs": 10,
+  "afterglowMs": 50
 }

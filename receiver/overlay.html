@@ -65,8 +65,11 @@
   .key-btn.active {
     background: rgba(255,220,50,0.85);
     border-color: #ffd700;
-    color: #000;
     transform: scale(1.05);
+  }
+  .key-btn.afterglow {
+    background: rgba(255,220,50,0.2);
+    border-color: rgba(255,215,0,0.35);
   }
   .key-btn.direction {
     border-color: rgba(100,180,255,0.6);
@@ -74,7 +77,10 @@
   .key-btn.direction.active {
     background: rgba(100,180,255,0.85);
     border-color: #64b4ff;
-    color: #000;
+  }
+  .key-btn.direction.afterglow {
+    background: rgba(100,180,255,0.2);
+    border-color: rgba(100,180,255,0.35);
   }
 
   .key-spacer { width: 20px; }
@@ -224,6 +230,7 @@ const gamepadDirKeys = {
 
 let buttonLabels = {};
 let axisState = {};
+let afterglowTimers = {};
 
 // --- Panel drag ---
 let panelDrag = null;
@@ -638,6 +645,8 @@ function buildLayout() {
   pressedKeys.clear();
   dirState = { left: false, right: false, up: false, down: false };
   axisState = {};
+  Object.values(afterglowTimers).forEach(clearTimeout);
+  afterglowTimers = {};
   historyEntries = [];
   const histEl = document.getElementById('history');
   const max = histCfg().maxEntries ?? 10;
@@ -736,11 +745,28 @@ function handleInput(data) {
 
   if (isDown) {
     pressedKeys.add(key);
-    if (el) el.classList.add('active');
+    if (el) {
+      if (afterglowTimers[key]) {
+        clearTimeout(afterglowTimers[key]);
+        delete afterglowTimers[key];
+        el.classList.remove('afterglow');
+      }
+      el.classList.add('active');
+    }
     if (dirName) dirState[dirName] = true;
   } else {
     pressedKeys.delete(key);
-    if (el) el.classList.remove('active');
+    if (el) {
+      el.classList.remove('active');
+      const ms = config?.afterglowMs ?? 50;
+      if (ms > 0) {
+        el.classList.add('afterglow');
+        afterglowTimers[key] = setTimeout(() => {
+          el.classList.remove('afterglow');
+          delete afterglowTimers[key];
+        }, ms);
+      }
+    }
     if (dirName) dirState[dirName] = false;
   }
 
