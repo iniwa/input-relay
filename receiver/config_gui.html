@@ -271,7 +271,11 @@
   .preview-box .pv-key:hover { border-color: rgba(255,255,255,0.8); }
   .preview-box .pv-key.active {
     background: rgba(255,220,50,0.85);
-    border-color: #ffd700; color: #000; transform: scale(1.05);
+    border-color: #ffd700; transform: scale(1.05);
+  }
+  .preview-box .pv-key.afterglow {
+    background: rgba(255,220,50,0.2);
+    border-color: rgba(255,215,0,0.35);
   }
   .preview-box .pv-key.direction {
     border-color: rgba(100,180,255,0.6);
@@ -279,7 +283,11 @@
   .preview-box .pv-key.direction:hover { border-color: rgba(100,180,255,0.9); }
   .preview-box .pv-key.direction.active {
     background: rgba(100,180,255,0.85);
-    border-color: #64b4ff; color: #000;
+    border-color: #64b4ff;
+  }
+  .preview-box .pv-key.direction.afterglow {
+    background: rgba(100,180,255,0.2);
+    border-color: rgba(100,180,255,0.35);
   }
 
   /* Edit mode: buttons show grab cursor */
@@ -349,7 +357,11 @@
   }
   .preview-box .pv-dpad-btn.active {
     background: rgba(100,180,255,0.85);
-    border-color: #64b4ff; color: #000;
+    border-color: #64b4ff;
+  }
+  .preview-box .pv-dpad-btn.afterglow {
+    background: rgba(100,180,255,0.2);
+    border-color: rgba(100,180,255,0.35);
   }
   .preview-box .pv-ctrl-buttons { display: grid; gap: 4px; }
   .preview-box .pv-left-cluster, .preview-box .pv-right-cluster {
@@ -397,6 +409,7 @@
   <div class="tab" data-tab="leverless">Leverless レイアウト</div>
   <div class="tab" data-tab="controller">Controller レイアウト</div>
   <div class="tab" data-tab="history">入力履歴</div>
+  <div class="tab" data-tab="layout">レイアウト調整</div>
   <div class="tab" data-tab="debug">デバッグ</div>
 </div>
 
@@ -660,6 +673,43 @@
   </div>
 </div>
 
+<!-- Layout -->
+<div class="tab-content" id="tab-layout">
+  <div class="form-group" style="margin-bottom:16px">
+    <span style="color:#aaa;font-size:13px">編集中のモード:</span>
+    <span id="layout-mode-label" style="color:#ffd700;font-weight:bold;font-size:14px">KEYBOARD</span>
+    <span style="font-size:12px;color:#666">（プレビューのモード切替と連動）</span>
+  </div>
+  <div class="form-group">
+    <button class="preview-mode-btn" id="edit-mode-btn" onclick="toggleEditMode()">レイアウト編集</button>
+    <span style="font-size:12px;color:#666">有効にするとプレビュー上でキーをドラッグ移動できます</span>
+  </div>
+
+  <h2>キー表示パネル</h2>
+  <div class="form-group">
+    <label>X</label>
+    <input type="number" id="layout-kd-x" value="16" onchange="onLayoutInputChange()">
+    <label style="margin-left:8px">Y</label>
+    <input type="number" id="layout-kd-y" value="16" onchange="onLayoutInputChange()">
+    <label style="margin-left:16px">倍率</label>
+    <input type="number" id="layout-kd-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:80px">
+  </div>
+
+  <h2>履歴パネル</h2>
+  <div class="form-group">
+    <label>X</label>
+    <input type="number" id="layout-hi-x" value="600" onchange="onLayoutInputChange()">
+    <label style="margin-left:8px">Y</label>
+    <input type="number" id="layout-hi-y" value="16" onchange="onLayoutInputChange()">
+    <label style="margin-left:16px">倍率</label>
+    <input type="number" id="layout-hi-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:80px">
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
 <!-- Debug -->
 <div class="tab-content" id="tab-debug">
   <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -683,7 +733,6 @@
       <button class="preview-mode-btn" data-mode="leverless" onclick="setPreviewMode('leverless')">Leverless</button>
       <button class="preview-mode-btn" data-mode="controller" onclick="setPreviewMode('controller')">Controller</button>
     </div>
-    <button class="preview-mode-btn" id="edit-mode-btn" onclick="toggleEditMode()">レイアウト編集</button>
     <span class="sep">|</span>
     <button class="preview-mode-btn" onclick="switchOverlayMode('keyboard')">KB切替</button>
     <button class="preview-mode-btn" onclick="switchOverlayMode('leverless')">LV切替</button>
@@ -695,18 +744,7 @@
     <div class="pv-grid pv-panel" id="pv-grid"></div>
     <div class="pv-history pv-panel" id="pv-history"></div>
   </div>
-  <p class="preview-hint">ボタンクリックで押下テスト / 「レイアウト編集」でドラッグ配置変更 / パネル背景ドラッグで位置移動</p>
-  <div class="layout-inputs">
-    <span id="layout-mode-label" style="font-size:12px;color:#ffd700;font-weight:bold;margin-right:8px">KEYBOARD</span>
-    <label>キー表示 X:</label><input type="number" id="layout-kd-x" value="16" onchange="onLayoutInputChange()">
-    <label>Y:</label><input type="number" id="layout-kd-y" value="16" onchange="onLayoutInputChange()">
-    <label style="margin-left:8px">倍率:</label><input type="number" id="layout-kd-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:60px">
-    <span class="sep">|</span>
-    <label>履歴 X:</label><input type="number" id="layout-hi-x" value="600" onchange="onLayoutInputChange()">
-    <label>Y:</label><input type="number" id="layout-hi-y" value="16" onchange="onLayoutInputChange()">
-    <label style="margin-left:8px">倍率:</label><input type="number" id="layout-hi-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:60px">
-    <button class="btn-save" onclick="saveOverlayConfig()" style="margin-left:16px">保存</button>
-  </div>
+  <p class="preview-hint">ボタンクリックで押下テスト / 位置・倍率は「レイアウト調整」タブで変更</p>
 </div>
 
 <script>
@@ -721,6 +759,7 @@ let pvKeyEls = {};
 let pvHistoryEntries = [];
 let pvDirState = { left: false, right: false, up: false, down: false };
 let pvButtonLabels = {};
+let pvAfterglowTimers = {};
 
 const pvDirKeys = { a: 'left', d: 'right', w: 'up', s: 'down' };
 const pvHatDirKeys = {
@@ -962,6 +1001,8 @@ function setPreviewMode(mode) {
   updateLayoutInputs();
   pvPressed.clear();
   pvDirState = { left: false, right: false, up: false, down: false };
+  Object.values(pvAfterglowTimers).forEach(clearTimeout);
+  pvAfterglowTimers = {};
   pvHistoryEntries = [];
   const hist = document.getElementById('pv-history');
   const max = pvHistMax();
@@ -1328,6 +1369,11 @@ function pvRecordCurrentState() {
 
 function pvSimPress(key, el) {
   pvPressed.add(key);
+  if (pvAfterglowTimers[key]) {
+    clearTimeout(pvAfterglowTimers[key]);
+    delete pvAfterglowTimers[key];
+    el.classList.remove('afterglow');
+  }
   el.classList.add('active');
   if (previewMode === 'controller') {
     const dirName = pvHatDirKeys[key];
@@ -1341,6 +1387,14 @@ function pvSimPress(key, el) {
 function pvSimRelease(key, el) {
   pvPressed.delete(key);
   el.classList.remove('active');
+  const ms = overlayConfig.afterglowMs ?? 50;
+  if (ms > 0) {
+    el.classList.add('afterglow');
+    pvAfterglowTimers[key] = setTimeout(() => {
+      el.classList.remove('afterglow');
+      delete pvAfterglowTimers[key];
+    }, ms);
+  }
   if (previewMode === 'controller') {
     const dirName = pvHatDirKeys[key];
     if (dirName) pvDirState[dirName] = false;
