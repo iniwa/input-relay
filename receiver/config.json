@@ -111,27 +111,6 @@
         "width": 3
       },
       {
-        "key": "b",
-        "label": "B",
-        "row": 3,
-        "col": 5,
-        "width": 1
-      },
-      {
-        "key": "n",
-        "label": "N",
-        "row": 3,
-        "col": 6,
-        "width": 1
-      },
-      {
-        "key": "m",
-        "label": "M",
-        "row": 3,
-        "col": 7,
-        "width": 1
-      },
-      {
         "key": "shift",
         "label": "Shift",
         "row": 3,
@@ -163,35 +142,35 @@
         "key": "mouse_right",
         "label": "RClick",
         "row": 1,
-        "col": 10,
+        "col": 9,
         "width": 1
       },
       {
         "key": "mouse_left",
         "label": "LClick",
         "row": 1,
-        "col": 8,
+        "col": 7,
         "width": 1
       },
       {
         "key": "mouse_middle",
         "label": "MClick",
         "row": 1,
-        "col": 9,
+        "col": 8,
         "width": 1
       },
       {
         "key": "mouse_x1",
         "label": "Side1",
         "row": 2,
-        "col": 8,
+        "col": 7,
         "width": 1
       },
       {
         "key": "mouse_x2",
         "label": "Side2",
         "row": 3,
-        "col": 8,
+        "col": 7,
         "width": 1
       }
     ]
@@ -410,5 +389,6 @@
       "idleTimeoutMs": 3000,
       "flip": false
     }
-  }
+  },
+  "displayDelayMs": 10
 }

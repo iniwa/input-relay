@@ -782,10 +782,14 @@ function connect() {
       dirState = { left: false, right: false, up: false, down: false };
       axisState = {};
       buildLayout();
-    } else if (data.type === 'axis_update') {
-      handleAxisUpdate(data);
     } else {
-      handleInput(data);
+      const delay = config?.displayDelayMs || 0;
+      const process = () => {
+        if (data.type === 'axis_update') handleAxisUpdate(data);
+        else handleInput(data);
+      };
+      if (delay > 0) setTimeout(process, delay);
+      else process();
     }
   };
 }
