@@ -8,7 +8,7 @@ import json
 import time
 import threading
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 import websockets
@@ -43,9 +43,9 @@ _controller_lock = threading.Lock()
 _request_refresh = False  # signal gamepad_loop to re-scan
 _controller_info = []  # cached list of controller dicts
 
-# Monitor WebSocket clients
-_monitor_clients = set()
-_monitor_lock = threading.Lock()
+# Monitor: async queue for broadcasting to WebSocket clients
+_monitor_queue = None  # asyncio.Queue, created in main()
+_monitor_clients = set()  # managed only from asyncio thread
 
 # Modifier key mapping: normalize left/right variants to base name
 _MODIFIER_MAP = {
@@ -112,23 +112,14 @@ class JsonQueue:
 
 event_queue = JsonQueue()
 
-# Also broadcast to monitor clients
-_original_put = JsonQueue.put
-def _put_with_monitor(self, data):
-    _original_put(self, data)
-    broadcast_to_monitors(data)
 
-
-def broadcast_to_monitors(data):
-    with _monitor_lock:
-        dead = set()
-        for ws in _monitor_clients:
-            try:
-                if _loop is not None:
-                    _loop.call_soon_threadsafe(asyncio.ensure_future, ws.send(data))
-            except Exception:
-                dead.add(ws)
-        _monitor_clients -= dead
+def enqueue_monitor(data):
+    """Thread-safe: push data to the monitor broadcast queue."""
+    if _loop is not None and _monitor_queue is not None:
+        try:
+            _loop.call_soon_threadsafe(_monitor_queue.put_nowait, data)
+        except Exception:
+            pass
 
 
 def on_press(key):
@@ -138,7 +129,7 @@ def on_press(key):
             pressed_keys.add(key_str)
             msg = make_event("key_down", key_str)
             event_queue.put(msg)
-            broadcast_to_monitors(msg)
+            enqueue_monitor(msg)
 
 
 def on_release(key):
@@ -147,7 +138,7 @@ def on_release(key):
         pressed_keys.discard(key_str)
     msg = make_event("key_up", key_str)
     event_queue.put(msg)
-    broadcast_to_monitors(msg)
+    enqueue_monitor(msg)
 
 
 # --- Mouse listener ---
@@ -165,7 +156,7 @@ def on_mouse_click(x, y, button, pressed):
     etype = "key_down" if pressed else "key_up"
     msg = make_event(etype, key_str, "mouse")
     event_queue.put(msg)
-    broadcast_to_monitors(msg)
+    enqueue_monitor(msg)
 
 
 def scan_controllers():
@@ -269,7 +260,7 @@ def gamepad_loop():
                 etype = "key_down" if val else "key_up"
                 msg = make_event(etype, f"btn_{i}", "gamepad")
                 event_queue.put(msg)
-                broadcast_to_monitors(msg)
+                enqueue_monitor(msg)
 
         # Hats — send in both leverless and controller modes
         for i in range(joy.get_numhats()):
@@ -279,19 +270,19 @@ def gamepad_loop():
                 if prev_hat[0] != 0:
                     msg = make_event("key_up", f"hat_{i}_{'left' if prev_hat[0] < 0 else 'right'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 if prev_hat[1] != 0:
                     msg = make_event("key_up", f"hat_{i}_{'down' if prev_hat[1] < 0 else 'up'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 if hat[0] != 0:
                     msg = make_event("key_down", f"hat_{i}_{'left' if hat[0] < 0 else 'right'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 if hat[1] != 0:
                     msg = make_event("key_down", f"hat_{i}_{'down' if hat[1] < 0 else 'up'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 prev_axes[f"hat_{i}"] = hat
 
         # Axes — always send both threshold-based and continuous
@@ -310,11 +301,11 @@ def gamepad_loop():
                 if prev != 0:
                     msg = make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 if val != 0:
                     msg = make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad")
                     event_queue.put(msg)
-                    broadcast_to_monitors(msg)
+                    enqueue_monitor(msg)
                 prev_axes[i] = val
             # Continuous (controller style)
             if abs(raw - prev_axes_raw.get(i, 2.0)) > 0.01:
@@ -327,7 +318,7 @@ def gamepad_loop():
                     "timestamp": time.time(),
                 })
                 event_queue.put(msg)
-                broadcast_to_monitors(msg)
+                enqueue_monitor(msg)
 
         time.sleep(0.008)
 
@@ -370,7 +361,7 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
         elif path == "/api/controllers":
             with _controller_lock:
                 sel = selected_controller_id
-            self._send_json({"controllers": _controller_info, "selected": sel})
+            self._send_json({"controllers": list(_controller_info), "selected": sel})
         elif path == "/api/status":
             with _controller_lock:
                 sel = selected_controller_id
@@ -435,34 +426,50 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
         with _controller_lock:
             sel = selected_controller_id
         self._send_json({
-            "controllers": _controller_info,
+            "controllers": list(_controller_info),
             "selected": sel,
             "count": len(_controller_info),
         })
 
 
 def start_http_server(port=8082):
-    server = HTTPServer(("0.0.0.0", port), SenderHTTPHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), SenderHTTPHandler)
     print(f"[HTTP] GUI server at http://localhost:{port}/")
     server.serve_forever()
 
 
-# --- Monitor WebSocket server ---
+# --- Monitor WebSocket: single async broadcaster ---
 async def monitor_handler(websocket):
-    with _monitor_lock:
-        _monitor_clients.add(websocket)
+    _monitor_clients.add(websocket)
     try:
         async for _ in websocket:
-            pass  # monitor is receive-only from server side
+            pass  # monitor is send-only from server side
+    except websockets.ConnectionClosed:
+        pass
     finally:
-        with _monitor_lock:
-            _monitor_clients.discard(websocket)
+        _monitor_clients.discard(websocket)
+
+
+async def monitor_broadcaster():
+    """Single task that reads from _monitor_queue and fans out to all clients."""
+    while running:
+        data = await _monitor_queue.get()
+        if not _monitor_clients:
+            continue
+        dead = []
+        for ws in list(_monitor_clients):
+            try:
+                await ws.send(data)
+            except (websockets.ConnectionClosed, Exception):
+                dead.append(ws)
+        for ws in dead:
+            _monitor_clients.discard(ws)
 
 
 async def start_monitor_ws(port=8083):
     async with websockets.serve(monitor_handler, "0.0.0.0", port):
         print(f"[Monitor] WebSocket at ws://localhost:{port}/")
-        await asyncio.Future()  # run forever
+        await monitor_broadcaster()
 
 
 # --- Reconnect logic ---
@@ -525,8 +532,9 @@ async def sender(host, port):
 
 
 async def main():
-    global _loop
+    global _loop, _monitor_queue
     _loop = asyncio.get_event_loop()
+    _monitor_queue = asyncio.Queue()
 
     kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     kb_listener.start()
@@ -537,7 +545,7 @@ async def main():
     gp_thread = threading.Thread(target=gamepad_loop, daemon=True)
     gp_thread.start()
 
-    # Start HTTP server for GUI
+    # Start HTTP server for GUI (ThreadingHTTPServer handles concurrent requests)
     http_port = config.get("http_port", 8082)
     http_thread = threading.Thread(target=start_http_server, args=(http_port,), daemon=True)
     http_thread.start()
