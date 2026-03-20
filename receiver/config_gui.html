@@ -791,7 +791,7 @@ let pvBtnDragState = null;     // button drag (edit mode)
 let rowDragState = null;
 
 // Tabs
-let activeTab = 'kb';
+let activeTab = 'sender';
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1079,7 +1079,7 @@ function applyPvLayoutFit() {
 }
 
 function updatePreviewLayout() {
-  const bindingTabs = ['kb', 'lv', 'ctrl'];
+  const bindingTabs = ['keyboard', 'leverless', 'controller'];
   if (bindingTabs.includes(activeTab)) {
     applyPvLayoutFit();
   } else {

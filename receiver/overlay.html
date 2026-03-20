@@ -184,9 +184,10 @@
     padding: 4px 8px;
     white-space: nowrap;
     opacity: 1;
-    transition: opacity 0.3s;
+    transition: opacity 0.5s;
   }
   .history-entry.fading { opacity: 0.3; }
+  .history-entry.removing { opacity: 0; }
 
   #mode-label {
     position: fixed;
@@ -214,9 +215,7 @@ let mode = 'keyboard';
 let pressedKeys = new Set();
 let keyElements = {};
 
-let historyEntries = [];
-let idleTimer = null;
-let idleHideTimer = null;
+let historyEntries = [];  // { text, el, fadeTimer, removeTimer }
 
 let dirState = { left: false, right: false, up: false, down: false };
 const dirKeys = {
@@ -647,17 +646,22 @@ function buildLayout() {
   axisState = {};
   Object.values(afterglowTimers).forEach(clearTimeout);
   afterglowTimers = {};
+  // Clear all per-entry timers
+  historyEntries.forEach(e => clearEntryTimers(e));
   historyEntries = [];
   const histEl = document.getElementById('history');
+  histEl.innerHTML = '';
   const max = histCfg().maxEntries ?? 10;
   histEl.style.display = max === 0 ? 'none' : 'flex';
   histEl.style.opacity = '1';
   if (max > 0) {
-    historyEntries = [NEUTRAL];
-    histEl.innerHTML = `<div class="history-entry">${NEUTRAL}</div>`;
-  } else {
-    historyEntries = [];
-    histEl.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'history-entry';
+    div.textContent = NEUTRAL;
+    histEl.appendChild(div);
+    const entry = { text: NEUTRAL, el: div, fadeTimer: null, removeTimer: null };
+    historyEntries = [entry];
+    startEntryTimer(entry);
   }
 
   // Apply display mode filtering
@@ -671,27 +675,41 @@ function buildLayout() {
   initPanelDrag();
 }
 
-function resetIdleTimer() {
-  const histEl = document.getElementById('history');
-  // Remove fading from entries
-  document.querySelectorAll('.history-entry').forEach(el => el.classList.remove('fading'));
-  // Show history panel
-  histEl.style.opacity = '1';
-
-  if (idleTimer) clearTimeout(idleTimer);
-  if (idleHideTimer) clearTimeout(idleHideTimer);
-
+function startEntryTimer(entry) {
   const timeout = histCfg().idleTimeoutMs ?? 3000;
-
-  // Fade entries after idle
-  idleTimer = setTimeout(() => {
-    document.querySelectorAll('.history-entry').forEach(el => el.classList.add('fading'));
+  // Fade after timeout
+  entry.fadeTimer = setTimeout(() => {
+    entry.el.classList.add('fading');
+    // Remove after fade
+    entry.removeTimer = setTimeout(() => {
+      entry.el.classList.add('removing');
+      setTimeout(() => removeEntry(entry), 500);
+    }, 2000);
   }, timeout);
+}
 
-  // Hide entire history panel after extended idle
-  idleHideTimer = setTimeout(() => {
-    histEl.style.opacity = '0';
-  }, timeout + 2000);
+function clearEntryTimers(entry) {
+  if (entry.fadeTimer) { clearTimeout(entry.fadeTimer); entry.fadeTimer = null; }
+  if (entry.removeTimer) { clearTimeout(entry.removeTimer); entry.removeTimer = null; }
+}
+
+function removeEntry(entry) {
+  const idx = historyEntries.indexOf(entry);
+  if (idx === -1) return;
+  historyEntries.splice(idx, 1);
+  if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
+  // Hide panel if empty
+  if (historyEntries.length === 0) {
+    document.getElementById('history').style.opacity = '0';
+  }
+}
+
+function resetLatestEntryTimer() {
+  if (historyEntries.length === 0) return;
+  const last = historyEntries[historyEntries.length - 1];
+  clearEntryTimers(last);
+  last.el.classList.remove('fading', 'removing');
+  startEntryTimer(last);
 }
 
 function getCurrentStateText() {
@@ -713,20 +731,36 @@ function recordCurrentState() {
   if (max === 0) return;
   const text = getCurrentStateText();
   if (text === null) return;
-  if (historyEntries.length > 0 && historyEntries[historyEntries.length - 1] === text) return;
-  historyEntries.push(text);
-  if (historyEntries.length > max) historyEntries.shift();
+  if (historyEntries.length > 0 && historyEntries[historyEntries.length - 1].text === text) return;
+
   const histEl = document.getElementById('history');
-  histEl.innerHTML = '';
-  const entries = cfg.flip ? historyEntries.slice().reverse() : historyEntries;
-  entries.forEach(entry => {
-    const div = document.createElement('div');
-    div.className = 'history-entry';
-    div.textContent = entry;
+  histEl.style.opacity = '1';
+
+  // Remove oldest if at max
+  while (historyEntries.length >= max) {
+    const old = historyEntries.shift();
+    clearEntryTimers(old);
+    if (old.el.parentNode) old.el.parentNode.removeChild(old.el);
+  }
+
+  // Create new entry
+  const div = document.createElement('div');
+  div.className = 'history-entry';
+  div.textContent = text;
+  const entry = { text, el: div, fadeTimer: null, removeTimer: null };
+
+  // Insert into DOM respecting flip
+  if (cfg.flip) {
+    histEl.insertBefore(div, histEl.firstChild);
+  } else {
     histEl.appendChild(div);
-  });
+  }
+  historyEntries.push(entry);
+
+  // Start per-entry timer
+  startEntryTimer(entry);
+
   histEl.scrollTop = cfg.flip ? 0 : histEl.scrollHeight;
-  resetIdleTimer();
 }
 
 function handleInput(data) {
