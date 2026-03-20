@@ -132,9 +132,15 @@ def gamepad_loop():
     prev_buttons = {}
     prev_axes = {}       # leverless: threshold-based axis state
     prev_axes_raw = {}   # controller: raw float values
+    last_reinit = 0
 
     while running:
         pygame.event.pump()
+
+        if joy is None and time.time() - last_reinit > 2.0:
+            pygame.joystick.quit()
+            pygame.joystick.init()
+            last_reinit = time.time()
 
         if pygame.joystick.get_count() > 0:
             if joy is None:

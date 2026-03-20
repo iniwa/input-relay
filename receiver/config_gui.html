@@ -97,6 +97,7 @@
   .btn-add { background: #3a6a3a; color: #fff; font-size: 12px; padding: 4px 12px; }
   .btn-del { background: #6a3a3a; color: #fff; font-size: 11px; padding: 2px 8px; }
   .btn-secondary { background: #3a3a6a; color: #ccc; }
+  .btn-refresh { background: #3a5a8a; color: #fff; }
   .btn-offset { background: #4a4a2a; color: #fff; font-size: 12px; padding: 4px 12px; }
 
   .status {
@@ -707,6 +708,7 @@
 
   <div class="btn-row">
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+    <button class="btn-refresh" onclick="refreshOverlay()">オーバーレイ更新</button>
   </div>
 </div>
 
@@ -774,13 +776,16 @@ let pvBtnDragState = null;     // button drag (edit mode)
 let rowDragState = null;
 
 // Tabs
+let activeTab = 'kb';
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    activeTab = tab.dataset.tab;
     if (tab.dataset.tab === 'debug') connectDebug();
+    updatePreviewLayout();
   });
 });
 
@@ -1031,6 +1036,28 @@ function applyPvLayout() {
   hist.style.transform = `scale(${pvScale * (hi.scale || 1)})`;
 }
 
+function applyPvLayoutFit() {
+  const grid = document.getElementById('pv-grid');
+  const hist = document.getElementById('pv-history');
+  hist.style.display = 'none';
+  grid.style.left = '0px';
+  grid.style.top = '0px';
+  const pvScale = 960 / 2560;
+  grid.style.transform = `scale(${pvScale})`;
+  grid.style.transformOrigin = 'top left';
+}
+
+function updatePreviewLayout() {
+  const bindingTabs = ['kb', 'lv', 'ctrl'];
+  if (bindingTabs.includes(activeTab)) {
+    applyPvLayoutFit();
+  } else {
+    const hist = document.getElementById('pv-history');
+    hist.style.display = pvHistMax() === 0 ? 'none' : 'flex';
+    applyPvLayout();
+  }
+}
+
 function updateLayoutInputs() {
   const ml = overlayConfig.layout?.[previewMode] || {};
   const kd = ml.keyDisplay || { x: 16, y: 16, scale: 1 };
@@ -1076,7 +1103,7 @@ function renderPreview() {
     renderPreviewController(grid);
   }
 
-  applyPvLayout();
+  updatePreviewLayout();
   initPvPanelDrag();
 }
 
@@ -1696,6 +1723,20 @@ async function saveOverlayConfig() {
   showStatus(data.ok ? '保存しました (オーバーレイに反映しました)' : 'エラー: ' + data.error, data.ok);
 }
 
+async function refreshOverlay() {
+  try {
+    const res = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    showStatus(data.ok ? 'オーバーレイを更新しました' : 'エラー: ' + data.error, data.ok);
+  } catch (e) {
+    showStatus('エラー: ' + e.message, false);
+  }
+}
+
 async function switchOverlayMode(mode) {
   const res = await fetch('/api/mode-switch', {
     method: 'POST',
@@ -1811,17 +1852,21 @@ function loadPreset(tab) {
     if (!overlayConfig.layout) overlayConfig.layout = {};
     overlayConfig.layout[type] = JSON.parse(JSON.stringify(p.layout));
   }
+  if (p.inputHistory) {
+    if (!overlayConfig.inputHistory) overlayConfig.inputHistory = {};
+    overlayConfig.inputHistory[type] = JSON.parse(JSON.stringify(p.inputHistory));
+  }
   if (type === 'keyboard')   renderKbKeys();
   if (type === 'leverless')  renderLeverless();
   if (type === 'controller') renderControllerTab();
   updateLayoutInputs();
-  applyPvLayout();
+  updatePreviewLayout();
   showStatus(`プリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
 }
 
 async function savePresetData(name, tab) {
   const type = getTabType(tab);
-  const payload = { name, type, [type]: overlayConfig[type] || {}, layout: overlayConfig.layout?.[type] || {} };
+  const payload = { name, type, [type]: overlayConfig[type] || {}, layout: overlayConfig.layout?.[type] || {}, inputHistory: overlayConfig.inputHistory?.[type] || {} };
   const res = await fetch('/api/presets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1837,7 +1882,7 @@ async function savePreset(tab) {
   const data = await savePresetData(name, tab);
   if (data.ok) {
     const type = getTabType(tab);
-    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type] };
+    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type], inputHistory: overlayConfig.inputHistory?.[type] };
     renderPresetSelect();
     getPresetSelectForTab(tab).value = name;
     nameInput.value = '';
@@ -1855,7 +1900,7 @@ async function overwritePreset(tab) {
   const data = await savePresetData(name, tab);
   if (data.ok) {
     const type = getTabType(tab);
-    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type] };
+    presetsData[type][name] = { [type]: overlayConfig[type], layout: overlayConfig.layout?.[type], inputHistory: overlayConfig.inputHistory?.[type] };
     showStatus(`プリセット「${name}」を上書き保存しました`, true);
   } else {
     showStatus('エラー: ' + data.error, false);

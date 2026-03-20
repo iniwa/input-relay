@@ -629,7 +629,7 @@ function updateDirFromStick() {
 
 function histCfg() {
   const h = config?.inputHistory || {};
-  return h[mode] || h || {};
+  return h[mode] || {};
 }
 
 function buildLayout() {
@@ -788,7 +788,13 @@ function handleAxisUpdate(data) {
 // --- WebSocket ---
 function connect() {
   const ws = new WebSocket(WS_URL);
-  ws.onopen = () => console.log('Connected to server');
+  ws.onopen = () => {
+    console.log('Connected to server');
+    fetch('/api/config').then(r => r.json()).then(data => {
+      config = data;
+      buildLayout();
+    }).catch(() => {});
+  };
   ws.onclose = () => {
     console.log('Disconnected, reconnecting...');
     setTimeout(connect, 1000);

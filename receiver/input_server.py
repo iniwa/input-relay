@@ -125,9 +125,15 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 save_config(data)
+                msg = json.dumps({"type": "config", "data": data})
                 if _ws_loop:
-                    msg = json.dumps({"type": "config", "data": data})
-                    asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+                    future = asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+                    try:
+                        future.result(timeout=2)
+                    except Exception as e:
+                        print(f"[WS] Broadcast failed: {e}")
+                else:
+                    print("[WS] Warning: _ws_loop is None, broadcast skipped")
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -141,7 +147,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 presets = load_presets()
                 if ptype not in presets:
                     presets[ptype] = {}
-                presets[ptype][name] = {ptype: data[ptype], "layout": data.get("layout", {})}
+                presets[ptype][name] = {ptype: data[ptype], "layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
                 save_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:
@@ -153,6 +159,21 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 sender_cfg_path = OVERLAY_DIR.parent / "sender" / "sender_config.json"
                 sender_cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
+        if parsed.path == "/api/refresh":
+            try:
+                data = load_config()
+                msg = json.dumps({"type": "config", "data": data})
+                if _ws_loop:
+                    future = asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+                    try:
+                        future.result(timeout=2)
+                    except Exception as e:
+                        print(f"[WS] Refresh broadcast failed: {e}")
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
