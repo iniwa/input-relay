@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Input Sender - メインPC設定</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  h1 { color: #ffd700; margin-bottom: 8px; font-size: 22px; }
+  h2 { color: #64b4ff; margin: 20px 0 10px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+
+  .form-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .form-group label {
+    min-width: 140px;
+    font-size: 14px;
+    color: #aaa;
+  }
+  input[type="text"], input[type="number"] {
+    background: #2a2a4a;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 200px;
+  }
+  input:focus { outline: none; border-color: #64b4ff; }
+
+  .btn-row { margin: 12px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  .btn-save { background: #ffd700; color: #000; }
+  .btn-save:hover { background: #ffed4a; }
+  .btn-refresh { background: #3a5a8a; color: #fff; }
+  .btn-refresh:hover { background: #4a6a9a; }
+  .btn-secondary { background: #3a3a6a; color: #ccc; }
+  .btn-secondary:hover { background: #4a4a7a; }
+
+  .status {
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 8px 0;
+    font-size: 13px;
+    display: none;
+  }
+  .status.ok { display: block; background: #1a4a1a; color: #4a4; }
+  .status.err { display: block; background: #4a1a1a; color: #f66; }
+  .status.info { display: block; background: #1a3a4a; color: #6af; }
+
+  .controller-list {
+    margin: 8px 0;
+  }
+  .controller-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    margin: 4px 0;
+    background: #2a2a4a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .controller-item:hover {
+    background: #3a3a5a;
+  }
+  .controller-item.selected {
+    border-color: #ffd700;
+    background: #2a2a3a;
+  }
+  .controller-item input[type="radio"] {
+    accent-color: #ffd700;
+    width: 16px;
+    height: 16px;
+  }
+  .controller-name {
+    font-size: 14px;
+    font-weight: bold;
+    color: #fff;
+  }
+  .controller-info {
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+  }
+  .no-controllers {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+    background: #2a2a4a;
+    border-radius: 6px;
+  }
+
+  .connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #2a2a4a;
+    border-radius: 6px;
+    margin: 8px 0;
+  }
+  .connection-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #666;
+  }
+  .connection-dot.connected { background: #4c4; }
+  .connection-dot.disconnected { background: #c44; }
+  .connection-dot.connecting { background: #cc4; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  .section {
+    background: #22223a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .hint { font-size: 12px; color: #666; margin-top: 4px; }
+
+  .input-monitor {
+    background: #1a1a2e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    min-height: 60px;
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    color: #aaa;
+    margin-top: 8px;
+  }
+  .input-monitor .active-key {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px;
+    background: #ffd700;
+    color: #000;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Input Sender - メインPC設定</h1>
+
+<!-- Connection Status -->
+<div class="section">
+  <h2>接続状態</h2>
+  <div class="connection-status">
+    <div class="connection-dot" id="wsDot"></div>
+    <span id="wsStatus">確認中...</span>
+  </div>
+</div>
+
+<!-- Connection Settings -->
+<div class="section">
+  <h2>接続設定</h2>
+  <div class="form-group">
+    <label>送信先ホスト</label>
+    <input type="text" id="host" placeholder="192.168.1.211">
+  </div>
+  <div class="form-group">
+    <label>ポート</label>
+    <input type="number" id="port" placeholder="8765" style="width:100px;">
+  </div>
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveConfig()">保存して再接続</button>
+  </div>
+  <div id="configStatus" class="status"></div>
+</div>
+
+<!-- Controller Selection -->
+<div class="section">
+  <h2>コントローラ選択</h2>
+  <div class="btn-row">
+    <button class="btn-refresh" onclick="refreshControllers()">コントローラ一覧を更新</button>
+  </div>
+  <div id="controllerList" class="controller-list">
+    <div class="no-controllers">読み込み中...</div>
+  </div>
+  <div id="controllerStatus" class="status"></div>
+</div>
+
+<!-- Input Monitor -->
+<div class="section">
+  <h2>入力モニタ</h2>
+  <p class="hint">選択中のコントローラからの入力をリアルタイムで表示します</p>
+  <div class="input-monitor" id="inputMonitor">
+    <span style="color:#666;">入力待ち...</span>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+
+let pollTimer = null;
+
+async function fetchStatus() {
+  try {
+    const res = await fetch(API + '/api/status');
+    const data = await res.json();
+    // Update connection status
+    const dot = document.getElementById('wsDot');
+    const statusText = document.getElementById('wsStatus');
+    dot.className = 'connection-dot ' + data.ws_status;
+    const labels = {
+      connected: '接続中',
+      disconnected: '切断',
+      connecting: '接続試行中...'
+    };
+    statusText.textContent = `${labels[data.ws_status] || data.ws_status} — ${data.host}:${data.port}`;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch(API + '/api/config');
+    const cfg = await res.json();
+    document.getElementById('host').value = cfg.host || '';
+    document.getElementById('port').value = cfg.port || 8765;
+  } catch (e) {
+    console.error('Failed to load config:', e);
+  }
+}
+
+async function saveConfig() {
+  const host = document.getElementById('host').value.trim();
+  const port = parseInt(document.getElementById('port').value) || 8765;
+  const statusEl = document.getElementById('configStatus');
+  try {
+    const res = await fetch(API + '/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, port })
+    });
+    const data = await res.json();
+    statusEl.className = 'status ok';
+    statusEl.textContent = '保存しました。再接続中...';
+    setTimeout(() => { statusEl.className = 'status'; }, 3000);
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '保存に失敗しました: ' + e.message;
+  }
+}
+
+async function refreshControllers() {
+  const statusEl = document.getElementById('controllerStatus');
+  try {
+    const res = await fetch(API + '/api/refresh-controllers', { method: 'POST' });
+    const data = await res.json();
+    statusEl.className = 'status info';
+    statusEl.textContent = `${data.count} 個のコントローラを検出しました`;
+    setTimeout(() => { statusEl.className = 'status'; }, 3000);
+    renderControllers(data.controllers, data.selected);
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = 'コントローラの更新に失敗しました';
+  }
+}
+
+async function loadControllers() {
+  try {
+    const res = await fetch(API + '/api/controllers');
+    const data = await res.json();
+    renderControllers(data.controllers, data.selected);
+  } catch (e) {
+    document.getElementById('controllerList').innerHTML =
+      '<div class="no-controllers">コントローラ情報の取得に失敗しました</div>';
+  }
+}
+
+function renderControllers(controllers, selectedId) {
+  const container = document.getElementById('controllerList');
+  if (!controllers || controllers.length === 0) {
+    container.innerHTML = '<div class="no-controllers">コントローラが見つかりません</div>';
+    return;
+  }
+  container.innerHTML = controllers.map(c => {
+    const checked = c.id === selectedId ? 'checked' : '';
+    const selectedClass = c.id === selectedId ? ' selected' : '';
+    return `
+      <div class="controller-item${selectedClass}" onclick="selectController(${c.id})">
+        <input type="radio" name="controller" value="${c.id}" ${checked}>
+        <span class="controller-name">${escapeHtml(c.name)}</span>
+        <span class="controller-info">ID: ${c.id} / ボタン: ${c.buttons} / 軸: ${c.axes} / ハット: ${c.hats}</span>
+      </div>`;
+  }).join('');
+}
+
+async function selectController(id) {
+  const statusEl = document.getElementById('controllerStatus');
+  try {
+    const res = await fetch(API + '/api/select-controller', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = `コントローラ「${data.name}」を選択しました`;
+      setTimeout(() => { statusEl.className = 'status'; }, 3000);
+      loadControllers();
+    } else {
+      statusEl.className = 'status err';
+      statusEl.textContent = data.error || '選択に失敗しました';
+    }
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '選択に失敗しました: ' + e.message;
+  }
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// Input monitor via WebSocket
+let monitorWs = null;
+const activeKeys = new Set();
+
+function connectMonitor() {
+  const wsUrl = `ws://${location.hostname}:8083/`;
+  monitorWs = new WebSocket(wsUrl);
+  monitorWs.onmessage = (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'key_down') {
+        activeKeys.add(ev.key);
+      } else if (ev.type === 'key_up') {
+        activeKeys.delete(ev.key);
+      } else if (ev.type === 'axis_update') {
+        // Show axis values temporarily
+        const label = `axis${ev.axis}:${ev.value.toFixed(2)}`;
+        activeKeys.add(label);
+        setTimeout(() => { activeKeys.delete(label); updateMonitorDisplay(); }, 200);
+      }
+      updateMonitorDisplay();
+    } catch (err) {}
+  };
+  monitorWs.onclose = () => {
+    setTimeout(connectMonitor, 2000);
+  };
+  monitorWs.onerror = () => {};
+}
+
+function updateMonitorDisplay() {
+  const el = document.getElementById('inputMonitor');
+  if (activeKeys.size === 0) {
+    el.innerHTML = '<span style="color:#666;">入力待ち...</span>';
+  } else {
+    el.innerHTML = Array.from(activeKeys).map(k =>
+      `<span class="active-key">${escapeHtml(k)}</span>`
+    ).join('');
+  }
+}
+
+// Init
+loadConfig();
+loadControllers();
+fetchStatus();
+connectMonitor();
+// Poll status every 3s
+pollTimer = setInterval(fetchStatus, 3000);
+</script>
+
+</body>
+</html>

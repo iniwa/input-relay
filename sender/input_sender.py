@@ -1,6 +1,6 @@
 """
 Input Sender - Captures keyboard/gamepad/mouse input and sends to Sub PC via WebSocket.
-Run on Main PC.
+Run on Main PC. Includes local HTTP server for configuration GUI.
 """
 
 import asyncio
@@ -8,6 +8,8 @@ import json
 import time
 import threading
 from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse
 
 import websockets
 from pynput import keyboard, mouse
@@ -16,18 +18,34 @@ pygame = None
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "sender_config.json"
+GUI_PATH = Path(__file__).parent / "sender_gui.html"
+
 def load_config():
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     return {"host": "192.168.1.100", "port": 8765, "toggleKey": "f12"}
 
+def save_config(cfg):
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
 config = load_config()
 
 ws_connection = None
+ws_status = "disconnected"  # "connected", "disconnected", "connecting"
 running = True
 pressed_keys = set()
 _pressed_keys_lock = threading.Lock()
 _loop = None  # asyncio event loop, set in main()
+
+# Controller selection state
+selected_controller_id = 0
+_controller_lock = threading.Lock()
+_request_refresh = False  # signal gamepad_loop to re-scan
+_controller_info = []  # cached list of controller dicts
+
+# Monitor WebSocket clients
+_monitor_clients = set()
+_monitor_lock = threading.Lock()
 
 # Modifier key mapping: normalize left/right variants to base name
 _MODIFIER_MAP = {
@@ -94,20 +112,42 @@ class JsonQueue:
 
 event_queue = JsonQueue()
 
+# Also broadcast to monitor clients
+_original_put = JsonQueue.put
+def _put_with_monitor(self, data):
+    _original_put(self, data)
+    broadcast_to_monitors(data)
+
+
+def broadcast_to_monitors(data):
+    with _monitor_lock:
+        dead = set()
+        for ws in _monitor_clients:
+            try:
+                if _loop is not None:
+                    _loop.call_soon_threadsafe(asyncio.ensure_future, ws.send(data))
+            except Exception:
+                dead.add(ws)
+        _monitor_clients -= dead
+
 
 def on_press(key):
     key_str = key_to_str(key)
     with _pressed_keys_lock:
         if key_str not in pressed_keys:
             pressed_keys.add(key_str)
-            event_queue.put(make_event("key_down", key_str))
+            msg = make_event("key_down", key_str)
+            event_queue.put(msg)
+            broadcast_to_monitors(msg)
 
 
 def on_release(key):
     key_str = key_to_str(key)
     with _pressed_keys_lock:
         pressed_keys.discard(key_str)
-    event_queue.put(make_event("key_up", key_str))
+    msg = make_event("key_up", key_str)
+    event_queue.put(msg)
+    broadcast_to_monitors(msg)
 
 
 # --- Mouse listener ---
@@ -123,38 +163,103 @@ def on_mouse_click(x, y, button, pressed):
     if not key_str:
         return
     etype = "key_down" if pressed else "key_up"
-    event_queue.put(make_event(etype, key_str, "mouse"))
+    msg = make_event(etype, key_str, "mouse")
+    event_queue.put(msg)
+    broadcast_to_monitors(msg)
+
+
+def scan_controllers():
+    """Scan for available controllers and return list of info dicts."""
+    global _controller_info
+    if pygame is None:
+        return []
+    pygame.joystick.quit()
+    pygame.joystick.init()
+    controllers = []
+    for i in range(pygame.joystick.get_count()):
+        try:
+            j = pygame.joystick.Joystick(i)
+            j.init()
+            controllers.append({
+                "id": i,
+                "name": j.get_name(),
+                "buttons": j.get_numbuttons(),
+                "axes": j.get_numaxes(),
+                "hats": j.get_numhats(),
+            })
+        except Exception:
+            pass
+    _controller_info = controllers
+    return controllers
 
 
 def gamepad_loop():
+    global selected_controller_id, _request_refresh
     load_pygame()
     joy = None
+    joy_id = -1
     prev_buttons = {}
     prev_axes = {}       # leverless: threshold-based axis state
     prev_axes_raw = {}   # controller: raw float values
     last_reinit = 0
 
+    # Initial scan
+    scan_controllers()
+
     while running:
         pygame.event.pump()
+
+        # Handle refresh request from API
+        if _request_refresh:
+            _request_refresh = False
+            scan_controllers()
+            # If current joy is no longer valid, disconnect
+            with _controller_lock:
+                target_id = selected_controller_id
+            if joy is not None and joy_id != target_id:
+                joy = None
+                prev_buttons.clear()
+                prev_axes.clear()
+                prev_axes_raw.clear()
+
+        with _controller_lock:
+            target_id = selected_controller_id
 
         if joy is None and time.time() - last_reinit > 2.0:
             pygame.joystick.quit()
             pygame.joystick.init()
             last_reinit = time.time()
+            scan_controllers()
 
         if pygame.joystick.get_count() > 0:
             if joy is None:
-                joy = pygame.joystick.Joystick(0)
+                # Use selected controller ID, fallback to 0
+                use_id = target_id if target_id < pygame.joystick.get_count() else 0
+                joy = pygame.joystick.Joystick(use_id)
                 joy.init()
-                print(f"[Gamepad] Connected: {joy.get_name()}")
+                joy_id = use_id
+                with _controller_lock:
+                    selected_controller_id = use_id
+                print(f"[Gamepad] Connected: {joy.get_name()} (ID: {use_id})")
         else:
             if joy is not None:
                 joy = None
+                joy_id = -1
                 prev_buttons.clear()
                 prev_axes.clear()
                 prev_axes_raw.clear()
             time.sleep(0.1)
             continue
+
+        # If user selected a different controller, switch
+        if target_id != joy_id and target_id < pygame.joystick.get_count():
+            joy = pygame.joystick.Joystick(target_id)
+            joy.init()
+            joy_id = target_id
+            prev_buttons.clear()
+            prev_axes.clear()
+            prev_axes_raw.clear()
+            print(f"[Gamepad] Switched to: {joy.get_name()} (ID: {target_id})")
 
         # Buttons — always send regardless of mode
         for i in range(joy.get_numbuttons()):
@@ -162,7 +267,9 @@ def gamepad_loop():
             if val != prev_buttons.get(i, 0):
                 prev_buttons[i] = val
                 etype = "key_down" if val else "key_up"
-                event_queue.put(make_event(etype, f"btn_{i}", "gamepad"))
+                msg = make_event(etype, f"btn_{i}", "gamepad")
+                event_queue.put(msg)
+                broadcast_to_monitors(msg)
 
         # Hats — send in both leverless and controller modes
         for i in range(joy.get_numhats()):
@@ -170,13 +277,21 @@ def gamepad_loop():
             prev_hat = prev_axes.get(f"hat_{i}", (0, 0))
             if hat != prev_hat:
                 if prev_hat[0] != 0:
-                    event_queue.put(make_event("key_up", f"hat_{i}_{'left' if prev_hat[0] < 0 else 'right'}", "gamepad"))
+                    msg = make_event("key_up", f"hat_{i}_{'left' if prev_hat[0] < 0 else 'right'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 if prev_hat[1] != 0:
-                    event_queue.put(make_event("key_up", f"hat_{i}_{'down' if prev_hat[1] < 0 else 'up'}", "gamepad"))
+                    msg = make_event("key_up", f"hat_{i}_{'down' if prev_hat[1] < 0 else 'up'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 if hat[0] != 0:
-                    event_queue.put(make_event("key_down", f"hat_{i}_{'left' if hat[0] < 0 else 'right'}", "gamepad"))
+                    msg = make_event("key_down", f"hat_{i}_{'left' if hat[0] < 0 else 'right'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 if hat[1] != 0:
-                    event_queue.put(make_event("key_down", f"hat_{i}_{'down' if hat[1] < 0 else 'up'}", "gamepad"))
+                    msg = make_event("key_down", f"hat_{i}_{'down' if hat[1] < 0 else 'up'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 prev_axes[f"hat_{i}"] = hat
 
         # Axes — always send both threshold-based and continuous
@@ -193,46 +308,218 @@ def gamepad_loop():
             prev = prev_axes.get(i, 0)
             if val != prev:
                 if prev != 0:
-                    event_queue.put(make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad"))
+                    msg = make_event("key_up", f"axis_{i}_{'neg' if prev < 0 else 'pos'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 if val != 0:
-                    event_queue.put(make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad"))
+                    msg = make_event("key_down", f"axis_{i}_{'neg' if val < 0 else 'pos'}", "gamepad")
+                    event_queue.put(msg)
+                    broadcast_to_monitors(msg)
                 prev_axes[i] = val
             # Continuous (controller style)
             if abs(raw - prev_axes_raw.get(i, 2.0)) > 0.01:
                 prev_axes_raw[i] = raw
-                event_queue.put(json.dumps({
+                msg = json.dumps({
                     "type": "axis_update",
                     "axis": i,
                     "value": round(raw, 3),
                     "source": "gamepad",
                     "timestamp": time.time(),
-                }))
+                })
+                event_queue.put(msg)
+                broadcast_to_monitors(msg)
 
         time.sleep(0.008)
 
 
+# --- HTTP Server for GUI ---
+class SenderHTTPHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # suppress access logs
+
+    def _send_json(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", len(body))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_html(self, path):
+        try:
+            content = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", len(content))
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self.send_error(404)
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(length)) if length else {}
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/" or path == "/index.html":
+            self._send_html(GUI_PATH)
+        elif path == "/api/config":
+            self._send_json(config)
+        elif path == "/api/controllers":
+            with _controller_lock:
+                sel = selected_controller_id
+            self._send_json({"controllers": _controller_info, "selected": sel})
+        elif path == "/api/status":
+            with _controller_lock:
+                sel = selected_controller_id
+            self._send_json({
+                "ws_status": ws_status,
+                "host": config.get("host", ""),
+                "port": config.get("port", 8765),
+                "selected_controller": sel,
+            })
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path == "/api/config":
+            self._handle_save_config()
+        elif path == "/api/select-controller":
+            self._handle_select_controller()
+        elif path == "/api/refresh-controllers":
+            self._handle_refresh_controllers()
+        else:
+            self.send_error(404)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def _handle_save_config(self):
+        global config
+        data = self._read_body()
+        config["host"] = data.get("host", config.get("host"))
+        config["port"] = int(data.get("port", config.get("port", 8765)))
+        save_config(config)
+        # Signal reconnect
+        if _loop is not None:
+            _loop.call_soon_threadsafe(_trigger_reconnect)
+        self._send_json({"ok": True})
+
+    def _handle_select_controller(self):
+        global selected_controller_id
+        data = self._read_body()
+        cid = int(data.get("id", 0))
+        with _controller_lock:
+            selected_controller_id = cid
+        # Find name
+        name = "Unknown"
+        for c in _controller_info:
+            if c["id"] == cid:
+                name = c["name"]
+                break
+        print(f"[GUI] Controller selected: {name} (ID: {cid})")
+        self._send_json({"ok": True, "id": cid, "name": name})
+
+    def _handle_refresh_controllers(self):
+        global _request_refresh
+        _request_refresh = True
+        # Wait briefly for gamepad_loop to process
+        time.sleep(0.3)
+        with _controller_lock:
+            sel = selected_controller_id
+        self._send_json({
+            "controllers": _controller_info,
+            "selected": sel,
+            "count": len(_controller_info),
+        })
+
+
+def start_http_server(port=8082):
+    server = HTTPServer(("0.0.0.0", port), SenderHTTPHandler)
+    print(f"[HTTP] GUI server at http://localhost:{port}/")
+    server.serve_forever()
+
+
+# --- Monitor WebSocket server ---
+async def monitor_handler(websocket):
+    with _monitor_lock:
+        _monitor_clients.add(websocket)
+    try:
+        async for _ in websocket:
+            pass  # monitor is receive-only from server side
+    finally:
+        with _monitor_lock:
+            _monitor_clients.discard(websocket)
+
+
+async def start_monitor_ws(port=8083):
+    async with websockets.serve(monitor_handler, "0.0.0.0", port):
+        print(f"[Monitor] WebSocket at ws://localhost:{port}/")
+        await asyncio.Future()  # run forever
+
+
+# --- Reconnect logic ---
+_reconnect_event = None
+
+def _trigger_reconnect():
+    global _reconnect_event
+    if _reconnect_event is not None:
+        _reconnect_event.set()
+
+
 async def sender(host, port):
-    global ws_connection, running
-    uri = f"ws://{host}:{port}"
-    print(f"[Sender] Connecting to {uri} ...")
+    global ws_connection, ws_status, running, _reconnect_event
+    _reconnect_event = asyncio.Event()
 
     while running:
+        uri = f"ws://{config['host']}:{config['port']}"
+        ws_status = "connecting"
+        print(f"[Sender] Connecting to {uri} ...")
+
         try:
             async with websockets.connect(uri) as ws:
                 ws_connection = ws
+                ws_status = "connected"
+                _reconnect_event.clear()
                 print("[Sender] Connected!")
                 while running:
-                    msg = await event_queue.get()
+                    # Wait for either a message or a reconnect signal
+                    get_task = asyncio.ensure_future(event_queue.get())
+                    reconnect_task = asyncio.ensure_future(_reconnect_event.wait())
+                    done, pending = await asyncio.wait(
+                        [get_task, reconnect_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for t in pending:
+                        t.cancel()
+                    if reconnect_task in done:
+                        print("[Sender] Reconnect requested...")
+                        break
+                    msg = get_task.result()
                     try:
                         await ws.send(msg)
                     except websockets.ConnectionClosed:
                         break
         except (ConnectionRefusedError, OSError) as e:
             ws_connection = None
+            ws_status = "disconnected"
             print(f"[Sender] Connection failed: {e}. Retrying in 2s...")
-            await asyncio.sleep(2)
+            # Wait for either timeout or reconnect signal
+            try:
+                await asyncio.wait_for(_reconnect_event.wait(), timeout=2.0)
+                _reconnect_event.clear()
+            except asyncio.TimeoutError:
+                pass
         except websockets.ConnectionClosed:
             ws_connection = None
+            ws_status = "disconnected"
             print("[Sender] Connection lost. Reconnecting...")
             await asyncio.sleep(1)
 
@@ -250,7 +537,17 @@ async def main():
     gp_thread = threading.Thread(target=gamepad_loop, daemon=True)
     gp_thread.start()
 
-    await sender(config["host"], config["port"])
+    # Start HTTP server for GUI
+    http_port = config.get("http_port", 8082)
+    http_thread = threading.Thread(target=start_http_server, args=(http_port,), daemon=True)
+    http_thread.start()
+
+    # Start monitor WebSocket and sender concurrently
+    monitor_port = config.get("monitor_port", 8083)
+    await asyncio.gather(
+        sender(config["host"], config["port"]),
+        start_monitor_ws(monitor_port),
+    )
 
 
 if __name__ == "__main__":
