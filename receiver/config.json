@@ -162,14 +162,14 @@
       {
         "key": "mouse_x1",
         "label": "Side1",
-        "row": 2,
+        "row": 3,
         "col": 7,
         "width": 1
       },
       {
         "key": "mouse_x2",
         "label": "Side2",
-        "row": 3,
+        "row": 2,
         "col": 7,
         "width": 1
       }
@@ -338,8 +338,8 @@
   "layout": {
     "keyboard": {
       "keyDisplay": {
-        "x": 155,
-        "y": 949,
+        "x": 75,
+        "y": 64,
         "scale": 1
       },
       "history": {
@@ -355,8 +355,8 @@
         "scale": 1
       },
       "history": {
-        "x": 32,
-        "y": 304,
+        "x": 5,
+        "y": 821,
         "scale": 1.5
       }
     },
@@ -375,21 +375,21 @@
   },
   "inputHistory": {
     "keyboard": {
-      "maxEntries": 0,
+      "maxEntries": 10,
       "idleTimeoutMs": 3000,
       "flip": false
     },
     "leverless": {
       "maxEntries": 15,
       "idleTimeoutMs": 3000,
-      "flip": false
+      "flip": true
     },
     "controller": {
-      "maxEntries": 0,
+      "maxEntries": 10,
       "idleTimeoutMs": 3000,
       "flip": false
     }
   },
-  "displayDelayMs": 10,
+  "displayDelayMs": 30,
   "afterglowMs": 50
 }

@@ -164,14 +164,14 @@
           {
             "key": "mouse_x1",
             "label": "Side1",
-            "row": 2,
+            "row": 3,
             "col": 7,
             "width": 1
           },
           {
             "key": "mouse_x2",
             "label": "Side2",
-            "row": 3,
+            "row": 2,
             "col": 7,
             "width": 1
           }
@@ -179,8 +179,8 @@
       },
       "layout": {
         "keyDisplay": {
-          "x": 155,
-          "y": 949,
+          "x": 75,
+          "y": 64,
           "scale": 1
         },
         "history": {
