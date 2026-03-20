@@ -98,6 +98,14 @@
   .btn-del { background: #6a3a3a; color: #fff; font-size: 11px; padding: 2px 8px; }
   .btn-secondary { background: #3a3a6a; color: #ccc; }
   .btn-refresh { background: #3a5a8a; color: #fff; }
+  .page-header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .page-links { display: flex; gap: 6px; }
+  .page-links a {
+    padding: 4px 10px; font-size: 12px; font-weight: bold;
+    background: #2a2a4a; color: #aaa; border: 1px solid #444;
+    border-radius: 4px; text-decoration: none; white-space: nowrap;
+  }
+  .page-links a:hover { background: #3a3a6a; color: #fff; }
   .btn-offset { background: #4a4a2a; color: #fff; font-size: 12px; padding: 4px 12px; }
 
   .status {
@@ -402,7 +410,14 @@
 </head>
 <body>
 
-<h1>Input Display 設定</h1>
+<div class="page-header">
+  <h1>Input Display 設定</h1>
+  <div class="page-links">
+    <a href="/overlay.html" target="_blank">オーバーレイ</a>
+    <a href="/input" target="_blank">キー表示のみ</a>
+    <a href="/history" target="_blank">履歴のみ</a>
+  </div>
+</div>
 
 <div class="tabs">
   <div class="tab active" data-tab="sender">Sender (Main PC)</div>
@@ -1039,12 +1054,28 @@ function applyPvLayout() {
 function applyPvLayoutFit() {
   const grid = document.getElementById('pv-grid');
   const hist = document.getElementById('pv-history');
+  const box  = document.getElementById('preview-box');
   hist.style.display = 'none';
+  // Reset transform to measure natural size
+  grid.style.transform = 'none';
   grid.style.left = '0px';
   grid.style.top = '0px';
-  const pvScale = 960 / 2560;
-  grid.style.transform = `scale(${pvScale})`;
+  const gw = grid.scrollWidth || grid.offsetWidth;
+  const gh = grid.scrollHeight || grid.offsetHeight;
+  const bw = box.clientWidth;
+  const bh = box.clientHeight;
+  const pad = 16;
+  let scale = 1;
+  if (gw > 0 && gh > 0) {
+    scale = Math.min((bw - pad * 2) / gw, (bh - pad * 2) / gh, 1);
+  }
+  grid.style.transform = `scale(${scale})`;
   grid.style.transformOrigin = 'top left';
+  // Center within preview box
+  const scaledW = gw * scale;
+  const scaledH = gh * scale;
+  grid.style.left = Math.max(0, (bw - scaledW) / 2) + 'px';
+  grid.style.top  = Math.max(0, (bh - scaledH) / 2) + 'px';
 }
 
 function updatePreviewLayout() {

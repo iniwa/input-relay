@@ -707,7 +707,9 @@ function getCurrentStateText() {
 }
 
 function recordCurrentState() {
-  const max = histCfg().maxEntries ?? 10;
+  const cfg = histCfg();
+  const max = cfg.maxEntries ?? 10;
+  console.log('[History Debug]', { mode, cfg, flip: cfg.flip, max, inputHistory: config?.inputHistory });
   if (max === 0) return;
   const text = getCurrentStateText();
   if (text === null) return;
@@ -716,14 +718,14 @@ function recordCurrentState() {
   if (historyEntries.length > max) historyEntries.shift();
   const histEl = document.getElementById('history');
   histEl.innerHTML = '';
-  const entries = histCfg().flip ? historyEntries.slice().reverse() : historyEntries;
+  const entries = cfg.flip ? historyEntries.slice().reverse() : historyEntries;
   entries.forEach(entry => {
     const div = document.createElement('div');
     div.className = 'history-entry';
     div.textContent = entry;
     histEl.appendChild(div);
   });
-  histEl.scrollTop = histCfg().flip ? 0 : histEl.scrollHeight;
+  histEl.scrollTop = cfg.flip ? 0 : histEl.scrollHeight;
   resetIdleTimer();
 }
 
