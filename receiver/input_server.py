@@ -21,6 +21,7 @@ _ws_loop = None  # asyncio event loop, set in main()
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_PATH = OVERLAY_DIR / "config.json"
 PRESETS_PATH = OVERLAY_DIR / "presets.json"
+LAYOUT_PRESETS_PATH = OVERLAY_DIR / "layout_presets.json"
 
 
 def load_config():
@@ -56,6 +57,21 @@ def save_presets(data):
     PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def load_layout_presets():
+    empty = {"keyboard": {}, "leverless": {}, "controller": {}}
+    if not LAYOUT_PRESETS_PATH.exists():
+        return empty
+    data = json.loads(LAYOUT_PRESETS_PATH.read_text(encoding="utf-8"))
+    for t in _PRESET_TYPES:
+        if t not in data:
+            data[t] = {}
+    return data
+
+
+def save_layout_presets(data):
+    LAYOUT_PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 async def broadcast_to_browsers(message):
     async with _browser_lock:
         clients = list(browser_clients)
@@ -84,6 +100,10 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
         if path == "api/presets":
             self._json_response(load_presets())
+            return
+
+        if path == "api/layout-presets":
+            self._json_response(load_layout_presets())
             return
 
         if path == "api/sender-config":
@@ -154,6 +174,21 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(e)}, 400)
             return
 
+        if parsed.path == "/api/layout-presets":
+            try:
+                data = json.loads(body)
+                ptype = data.get("type", "keyboard")
+                name = data["name"]
+                presets = load_layout_presets()
+                if ptype not in presets:
+                    presets[ptype] = {}
+                presets[ptype][name] = {"layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
+                save_layout_presets(presets)
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
         if parsed.path == "/api/sender-config":
             try:
                 data = json.loads(body)
@@ -213,6 +248,18 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 presets = load_presets()
                 presets.get(ptype, {}).pop(data["name"], None)
                 save_presets(presets)
+                self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
+        if parsed.path == "/api/layout-presets":
+            try:
+                data = json.loads(body)
+                ptype = data.get("type", "keyboard")
+                presets = load_layout_presets()
+                presets.get(ptype, {}).pop(data["name"], None)
+                save_layout_presets(presets)
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)

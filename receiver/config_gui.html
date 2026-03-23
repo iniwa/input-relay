@@ -701,6 +701,17 @@
     <span style="font-size:12px;color:#666">有効にするとプレビュー上でキーをドラッグ移動できます</span>
   </div>
 
+  <div class="preset-bar" id="preset-bar-layout">
+    <span style="font-size:13px;color:#aaa;white-space:nowrap">レイアウトプリセット (<span id="layout-preset-mode-label">keyboard</span>):</span>
+    <select id="preset-select-layout"><option value="">-- 選択 --</option></select>
+    <button class="btn-load" onclick="loadLayoutPreset()">読み込み</button>
+    <button class="btn-overwrite" id="btn-overwrite-layout" onclick="overwriteLayoutPreset()" style="display:none">上書き保存</button>
+    <button class="btn-preset-del" onclick="deleteLayoutPreset()">削除</button>
+    <span class="sep">|</span>
+    <input type="text" id="preset-name-input-layout" placeholder="プリセット名" style="width:150px;padding:5px 8px;font-size:13px">
+    <button class="btn-preset-save" onclick="saveLayoutPreset()">新規保存</button>
+  </div>
+
   <h2>キー表示パネル</h2>
   <div class="form-group">
     <label>X</label>
@@ -1034,6 +1045,7 @@ function setPreviewMode(mode) {
     hist.innerHTML = '';
   }
   renderPreview();
+  if (typeof renderLayoutPresetSelect === 'function') renderLayoutPresetSelect();
 }
 
 function applyPvLayout() {
@@ -1849,6 +1861,10 @@ document.addEventListener('DOMContentLoaded', () => {
   ['preset-select', 'preset-select-lv', 'preset-select-ctrl'].forEach(id => {
     document.getElementById(id).addEventListener('change', updateOverwriteButtons);
   });
+  document.getElementById('preset-select-layout').addEventListener('change', () => {
+    const sel = document.getElementById('preset-select-layout');
+    document.getElementById('btn-overwrite-layout').style.display = sel.value ? '' : 'none';
+  });
 });
 
 async function fetchPresets() {
@@ -1959,6 +1975,124 @@ async function deletePreset(tab) {
   }
 }
 
+// ===== Layout Presets =====
+let layoutPresetsData = { keyboard: {}, leverless: {}, controller: {} };
+
+function renderLayoutPresetSelect() {
+  const sel = document.getElementById('preset-select-layout');
+  const type = previewMode; // current mode
+  const old = sel.value;
+  sel.innerHTML = '<option value="">-- 選択 --</option>';
+  Object.keys(layoutPresetsData[type] || {}).sort().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  if (old && layoutPresetsData[type]?.[old]) sel.value = old;
+  // Show/hide overwrite button
+  const btn = document.getElementById('btn-overwrite-layout');
+  btn.style.display = sel.value ? '' : 'none';
+  // Update mode label
+  const lbl = document.getElementById('layout-preset-mode-label');
+  if (lbl) lbl.textContent = type;
+}
+
+async function fetchLayoutPresets() {
+  const res = await fetch('/api/layout-presets');
+  const data = await res.json();
+  layoutPresetsData = { keyboard: data.keyboard || {}, leverless: data.leverless || {}, controller: data.controller || {} };
+  renderLayoutPresetSelect();
+}
+
+function loadLayoutPreset() {
+  const sel = document.getElementById('preset-select-layout');
+  const name = sel.value;
+  const type = previewMode;
+  if (!name || !layoutPresetsData[type]?.[name]) return;
+  const p = layoutPresetsData[type][name];
+  if (p.layout) {
+    if (!overlayConfig.layout) overlayConfig.layout = {};
+    overlayConfig.layout[type] = JSON.parse(JSON.stringify(p.layout));
+  }
+  if (p.inputHistory) {
+    if (!overlayConfig.inputHistory) overlayConfig.inputHistory = {};
+    overlayConfig.inputHistory[type] = JSON.parse(JSON.stringify(p.inputHistory));
+  }
+  updateLayoutInputs();
+  updatePreviewLayout();
+  showStatus(`レイアウトプリセット「${name}」を読み込みました。保存ボタンで確定してください。`, true);
+}
+
+async function saveLayoutPresetData(name) {
+  const type = previewMode;
+  const payload = {
+    name,
+    type,
+    layout: overlayConfig.layout?.[type] || {},
+    inputHistory: overlayConfig.inputHistory?.[type] || {},
+  };
+  const res = await fetch('/api/layout-presets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+async function saveLayoutPreset() {
+  const nameInput = document.getElementById('preset-name-input-layout');
+  const name = nameInput.value.trim();
+  if (!name) { showStatus('プリセット名を入力してください', false); return; }
+  const data = await saveLayoutPresetData(name);
+  if (data.ok) {
+    const type = previewMode;
+    layoutPresetsData[type][name] = { layout: overlayConfig.layout?.[type], inputHistory: overlayConfig.inputHistory?.[type] };
+    renderLayoutPresetSelect();
+    document.getElementById('preset-select-layout').value = name;
+    nameInput.value = '';
+    showStatus(`レイアウトプリセット「${name}」を保存しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
+async function overwriteLayoutPreset() {
+  const sel = document.getElementById('preset-select-layout');
+  const name = sel.value;
+  if (!name) return;
+  if (!confirm(`レイアウトプリセット「${name}」を上書きしますか？`)) return;
+  const data = await saveLayoutPresetData(name);
+  if (data.ok) {
+    const type = previewMode;
+    layoutPresetsData[type][name] = { layout: overlayConfig.layout?.[type], inputHistory: overlayConfig.inputHistory?.[type] };
+    showStatus(`レイアウトプリセット「${name}」を上書き保存しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
+async function deleteLayoutPreset() {
+  const sel = document.getElementById('preset-select-layout');
+  const name = sel.value;
+  if (!name) return;
+  if (!confirm(`レイアウトプリセット「${name}」を削除しますか？`)) return;
+  const type = previewMode;
+  const res = await fetch('/api/layout-presets', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, type }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    delete layoutPresetsData[type][name];
+    renderLayoutPresetSelect();
+    showStatus(`レイアウトプリセット「${name}」を削除しました`, true);
+  } else {
+    showStatus('エラー: ' + data.error, false);
+  }
+}
+
 async function init() {
   const [cfgRes, sndRes] = await Promise.all([
     fetch('/api/config'),
@@ -1991,7 +2125,7 @@ async function init() {
   renderHistory();
   updateLayoutInputs();
   renderPreview();
-  await fetchPresets();
+  await Promise.all([fetchPresets(), fetchLayoutPresets()]);
 }
 
 init();
