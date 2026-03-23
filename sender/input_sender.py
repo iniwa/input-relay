@@ -5,6 +5,8 @@ Run on Main PC. Includes local HTTP server for configuration GUI.
 
 import asyncio
 import json
+import os
+import sys
 import time
 import threading
 from pathlib import Path
@@ -382,6 +384,8 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
             self._handle_select_controller()
         elif path == "/api/refresh-controllers":
             self._handle_refresh_controllers()
+        elif path == "/api/restart":
+            self._handle_restart()
         else:
             self.send_error(404)
 
@@ -430,6 +434,12 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
             "selected": sel,
             "count": len(_controller_info),
         })
+
+    def _handle_restart(self):
+        self._send_json({"ok": True, "message": "Restarting..."})
+        print("[Sender] Restart requested via GUI. Restarting process...")
+        # Use os.execv to replace current process with a fresh instance
+        threading.Timer(0.5, lambda: os.execv(sys.executable, [sys.executable] + sys.argv)).start()
 
 
 def start_http_server(port=8082):

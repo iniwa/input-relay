@@ -53,6 +53,8 @@
   .btn-refresh:hover { background: #4a6a9a; }
   .btn-secondary { background: #3a3a6a; color: #ccc; }
   .btn-secondary:hover { background: #4a4a7a; }
+  .btn-danger { background: #8a3a3a; color: #fff; }
+  .btn-danger:hover { background: #a04a4a; }
 
   .status {
     padding: 8px 12px;
@@ -206,6 +208,16 @@
   <div id="controllerStatus" class="status"></div>
 </div>
 
+<!-- Restart -->
+<div class="section">
+  <h2>Sender 再起動</h2>
+  <p class="hint">新しいデバイスが認識されない場合、Senderプロセスを再起動してください</p>
+  <div class="btn-row">
+    <button class="btn-danger" onclick="restartSender()">Sender を再起動</button>
+  </div>
+  <div id="restartStatus" class="status"></div>
+</div>
+
 <!-- Input Monitor -->
 <div class="section">
   <h2>入力モニタ</h2>
@@ -336,6 +348,21 @@ async function selectController(id) {
   } catch (e) {
     statusEl.className = 'status err';
     statusEl.textContent = '選択に失敗しました: ' + e.message;
+  }
+}
+
+async function restartSender() {
+  if (!confirm('Senderプロセスを再起動します。よろしいですか？')) return;
+  const statusEl = document.getElementById('restartStatus');
+  try {
+    await fetch(API + '/api/restart', { method: 'POST' });
+    statusEl.className = 'status info';
+    statusEl.textContent = '再起動中... ページを自動的に再読み込みします';
+    // Wait for process to restart, then reload page
+    setTimeout(() => { location.reload(); }, 3000);
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '再起動リクエストに失敗しました: ' + e.message;
   }
 }
 
