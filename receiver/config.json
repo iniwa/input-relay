@@ -362,7 +362,7 @@
     },
     "controller": {
       "keyDisplay": {
-        "x": 2187,
+        "x": 2048,
         "y": 784,
         "scale": 1.5
       },
@@ -391,5 +391,5 @@
     }
   },
   "displayDelayMs": 70,
-  "afterglowMs": 50
+  "afterglowMs": 80
 }

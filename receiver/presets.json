@@ -179,8 +179,8 @@
       },
       "layout": {
         "keyDisplay": {
-          "x": 75,
-          "y": 64,
+          "x": 91,
+          "y": 107,
           "scale": 1
         },
         "history": {
@@ -188,6 +188,11 @@
           "y": 875,
           "scale": 1
         }
+      },
+      "inputHistory": {
+        "maxEntries": 0,
+        "idleTimeoutMs": 3000,
+        "flip": false
       }
     }
   },
@@ -371,15 +376,20 @@
       },
       "layout": {
         "keyDisplay": {
-          "x": 1824,
-          "y": 805,
-          "scale": 1
+          "x": 2048,
+          "y": 784,
+          "scale": 1.5
         },
         "history": {
           "x": 32,
           "y": 875,
           "scale": 1
         }
+      },
+      "inputHistory": {
+        "maxEntries": 0,
+        "idleTimeoutMs": 3000,
+        "flip": false
       }
     }
   }
