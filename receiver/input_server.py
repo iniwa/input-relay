@@ -353,7 +353,7 @@ async def ws_handler(ws):
         await sender_handler(ws)
 
 
-async def main(ws_port=8765, http_port=8080):
+async def main(ws_port=8888, http_port=8080):
     global _ws_loop
     _ws_loop = asyncio.get_event_loop()
 
@@ -371,7 +371,7 @@ async def main(ws_port=8765, http_port=8080):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Input Server")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=8888)
     parser.add_argument("--http-port", type=int, default=8081)
     args = parser.parse_args()
 

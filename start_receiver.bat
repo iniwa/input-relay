@@ -10,8 +10,8 @@ echo.
 
 echo [0] Configuring firewall ...
 netsh advfirewall firewall show rule name="InputDisplay-WS" >nul 2>&1 || (
-    netsh advfirewall firewall add rule name="InputDisplay-WS" dir=in action=allow protocol=TCP localport=8765 >nul
-    echo     Added rule: port 8765 (WebSocket)
+    netsh advfirewall firewall add rule name="InputDisplay-WS" dir=in action=allow protocol=TCP localport=8888 >nul
+    echo     Added rule: port 8888 (WebSocket)
 )
 netsh advfirewall firewall show rule name="InputDisplay-HTTP" >nul 2>&1 || (
     netsh advfirewall firewall add rule name="InputDisplay-HTTP" dir=in action=allow protocol=TCP localport=8081 >nul

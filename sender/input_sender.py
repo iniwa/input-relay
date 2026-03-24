@@ -25,7 +25,7 @@ GUI_PATH = Path(__file__).parent / "sender_gui.html"
 def load_config():
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {"host": "192.168.1.100", "port": 8765, "toggleKey": "f12"}
+    return {"host": "192.168.1.100", "port": 8888, "toggleKey": "f12"}
 
 def save_config(cfg):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -370,7 +370,7 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "ws_status": ws_status,
                 "host": config.get("host", ""),
-                "port": config.get("port", 8765),
+                "port": config.get("port", 8888),
                 "selected_controller": sel,
             })
         else:
@@ -400,7 +400,7 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
         global config
         data = self._read_body()
         config["host"] = data.get("host", config.get("host"))
-        config["port"] = int(data.get("port", config.get("port", 8765)))
+        config["port"] = int(data.get("port", config.get("port", 8888)))
         save_config(config)
         # Signal reconnect
         if _loop is not None:
@@ -527,10 +527,10 @@ async def sender(host, port):
         except (ConnectionRefusedError, OSError) as e:
             ws_connection = None
             ws_status = "disconnected"
-            print(f"[Sender] Connection failed: {e}. Retrying in 2s...")
+            print(f"[Sender] Receiver not found ({e}). Waiting for receiver...")
             # Wait for either timeout or reconnect signal
             try:
-                await asyncio.wait_for(_reconnect_event.wait(), timeout=2.0)
+                await asyncio.wait_for(_reconnect_event.wait(), timeout=3.0)
                 _reconnect_event.clear()
             except asyncio.TimeoutError:
                 pass
@@ -539,6 +539,15 @@ async def sender(host, port):
             ws_status = "disconnected"
             print("[Sender] Connection lost. Reconnecting...")
             await asyncio.sleep(1)
+        except Exception as e:
+            ws_connection = None
+            ws_status = "disconnected"
+            print(f"[Sender] Unexpected error: {e}. Retrying in 3s...")
+            try:
+                await asyncio.wait_for(_reconnect_event.wait(), timeout=3.0)
+                _reconnect_event.clear()
+            except asyncio.TimeoutError:
+                pass
 
 
 async def main():
