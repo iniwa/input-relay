@@ -171,7 +171,6 @@
   /* History */
   #history {
     display: flex;
-    flex-direction: column;
     gap: 2px;
     font-size: 18px;
     font-weight: bold;
@@ -651,8 +650,11 @@ function buildLayout() {
   historyEntries = [];
   const histEl = document.getElementById('history');
   histEl.innerHTML = '';
-  const max = histCfg().maxEntries ?? 10;
+  const cfg = histCfg();
+  const max = cfg.maxEntries ?? 10;
+  const flip = !!cfg.flip;
   histEl.style.display = max === 0 ? 'none' : 'flex';
+  histEl.style.flexDirection = flip ? 'column' : 'column-reverse';
   histEl.style.opacity = '1';
   if (max > 0) {
     const div = document.createElement('div');
@@ -749,18 +751,12 @@ function recordCurrentState() {
   div.textContent = text;
   const entry = { text, el: div, fadeTimer: null, removeTimer: null };
 
-  // Insert into DOM respecting flip
-  if (cfg.flip) {
-    histEl.insertBefore(div, histEl.firstChild);
-  } else {
-    histEl.appendChild(div);
-  }
+  // Always prepend in DOM; flex-direction handles visual order
+  histEl.insertBefore(div, histEl.firstChild);
   historyEntries.push(entry);
 
   // Start per-entry timer
   startEntryTimer(entry);
-
-  histEl.scrollTop = cfg.flip ? 0 : histEl.scrollHeight;
 }
 
 function handleInput(data) {

@@ -310,7 +310,6 @@
 
   .preview-box .pv-history {
     display: flex;
-    flex-direction: column;
     gap: 2px;
     font-size: 18px;
     font-weight: bold;
@@ -1047,7 +1046,9 @@ function setPreviewMode(mode) {
   pvHistoryEntries = [];
   const hist = document.getElementById('pv-history');
   const max = pvHistMax();
+  const flip = pvHistFlip();
   hist.style.display = max === 0 ? 'none' : 'flex';
+  hist.style.flexDirection = flip ? 'column' : 'column-reverse';
   if (max > 0) {
     pvHistoryEntries = [PV_NEUTRAL];
     hist.innerHTML = `<div class="pv-history-entry">${PV_NEUTRAL}</div>`;
@@ -1509,8 +1510,10 @@ function pvAddHistory(text) {
   if (pvHistoryEntries.length > max) pvHistoryEntries.shift();
   const hist = document.getElementById('pv-history');
   hist.style.display = 'flex';
-  const entries = pvHistFlip() ? pvHistoryEntries.slice().reverse() : pvHistoryEntries;
-  hist.innerHTML = entries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
+  hist.style.flexDirection = pvHistFlip() ? 'column' : 'column-reverse';
+  // Rebuild: newest first in DOM, flex-direction handles visual order
+  hist.innerHTML = pvHistoryEntries.slice().reverse()
+    .map(e => `<div class="pv-history-entry">${e}</div>`).join('');
 }
 
 // Keyboard input for preview
