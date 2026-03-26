@@ -5,6 +5,8 @@ Run on Sub PC.
 
 import asyncio
 import json
+import os
+import sys
 import time
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -17,6 +19,7 @@ browser_clients = set()
 _browser_lock = asyncio.Lock()
 sender_ws = None
 _ws_loop = None  # asyncio event loop, set in main()
+_ws_port = 8888  # WebSocket port, set in main()
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_PATH = OVERLAY_DIR / "config.json"
@@ -265,6 +268,11 @@ class OverlayHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(e)}, 400)
             return
 
+        if parsed.path == "/api/restart":
+            self._json_response({"ok": True})
+            threading.Thread(target=_restart_server, daemon=True).start()
+            return
+
         self.send_response(404)
         self.end_headers()
 
@@ -273,7 +281,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
         file_path = OVERLAY_DIR / "overlay.html"
         content = file_path.read_text(encoding="utf-8")
         inject = (
-            f'<script>window.__DISPLAY_MODE__="{mode}";</script>'
+            f'<script>window.__DISPLAY_MODE__="{mode}";window.__WS_PORT__="{_ws_port}";</script>'
             f'<style>{hide}{{display:none!important}}</style>'
         )
         content = content.replace("<head>", f"<head>{inject}", 1)
@@ -291,6 +299,13 @@ class OverlayHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+def _restart_server():
+    """Restart the server process after a short delay."""
+    time.sleep(0.5)
+    print("[Server] Restarting...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 def start_http_server(port):
@@ -354,8 +369,9 @@ async def ws_handler(ws):
 
 
 async def main(ws_port=8888, http_port=8080):
-    global _ws_loop
+    global _ws_loop, _ws_port
     _ws_loop = asyncio.get_event_loop()
+    _ws_port = ws_port
 
     http_thread = threading.Thread(
         target=start_http_server, args=(http_port,), daemon=True
