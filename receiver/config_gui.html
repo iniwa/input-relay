@@ -310,6 +310,7 @@
 
   .preview-box .pv-history {
     display: flex;
+    flex-direction: column;
     gap: 2px;
     font-size: 18px;
     font-weight: bold;
@@ -873,6 +874,7 @@ document.addEventListener('mousemove', (e) => {
   if (pvPanelDragState) {
     const dx = e.clientX - pvPanelDragState.startX;
     const dy = e.clientY - pvPanelDragState.startY;
+    pvPanelDragState.el.style.bottom = '';
     pvPanelDragState.el.style.left = Math.min(960, Math.max(0, pvPanelDragState.origLeft + dx)) + 'px';
     pvPanelDragState.el.style.top  = Math.min(540, Math.max(0, pvPanelDragState.origTop  + dy)) + 'px';
   }
@@ -892,12 +894,17 @@ document.addEventListener('mouseup', (e) => {
     const pvScale = 960 / 2560;  // 0.375
     const prevScale = overlayConfig.layout?.[previewMode]?.[key]?.scale ?? 1;
     if (!overlayConfig.layout[previewMode]) overlayConfig.layout[previewMode] = {};
+    const isHistBottom = key === 'history' && !pvHistFlip();
+    const yPx = isHistBottom
+      ? pvPanelDragState.el.offsetTop + pvPanelDragState.el.offsetHeight
+      : pvPanelDragState.el.offsetTop;
     overlayConfig.layout[previewMode][key] = {
       x:     Math.round(pvPanelDragState.el.offsetLeft / pvScale),
-      y:     Math.round(pvPanelDragState.el.offsetTop  / pvScale),
+      y:     Math.round(yPx / pvScale),
       scale: prevScale,
     };
     updateLayoutInputs();
+    applyPvLayout();
     pvPanelDragState = null;
   }
   // Button drag end (edit mode)
@@ -1046,9 +1053,7 @@ function setPreviewMode(mode) {
   pvHistoryEntries = [];
   const hist = document.getElementById('pv-history');
   const max = pvHistMax();
-  const flip = pvHistFlip();
   hist.style.display = max === 0 ? 'none' : 'flex';
-  hist.style.flexDirection = flip ? 'column' : 'column-reverse';
   if (max > 0) {
     pvHistoryEntries = [PV_NEUTRAL];
     hist.innerHTML = `<div class="pv-history-entry">${PV_NEUTRAL}</div>`;
@@ -1061,6 +1066,7 @@ function setPreviewMode(mode) {
 
 function applyPvLayout() {
   const pvScale = 960 / 2560;  // 0.375 (3/8)
+  const pvH = 540;  // preview box height in px
   const ml = overlayConfig.layout?.[previewMode] || {};
   const kd = ml.keyDisplay || { x: 16, y: 16, scale: 1 };
   const hi = ml.history    || { x: 600, y: 16, scale: 1 };
@@ -1070,7 +1076,16 @@ function applyPvLayout() {
   grid.style.top       = (kd.y * pvScale) + 'px';
   grid.style.transform = `scale(${pvScale * (kd.scale || 1)})`;
   hist.style.left      = (hi.x * pvScale) + 'px';
-  hist.style.top       = (hi.y * pvScale) + 'px';
+  const flip = pvHistFlip();
+  if (flip) {
+    hist.style.top    = (hi.y * pvScale) + 'px';
+    hist.style.bottom = '';
+    hist.style.transformOrigin = 'top left';
+  } else {
+    hist.style.top    = '';
+    hist.style.bottom = (pvH - hi.y * pvScale) + 'px';
+    hist.style.transformOrigin = 'bottom left';
+  }
   hist.style.transform = `scale(${pvScale * (hi.scale || 1)})`;
 }
 
@@ -1510,10 +1525,9 @@ function pvAddHistory(text) {
   if (pvHistoryEntries.length > max) pvHistoryEntries.shift();
   const hist = document.getElementById('pv-history');
   hist.style.display = 'flex';
-  hist.style.flexDirection = pvHistFlip() ? 'column' : 'column-reverse';
-  // Rebuild: newest first in DOM, flex-direction handles visual order
-  hist.innerHTML = pvHistoryEntries.slice().reverse()
-    .map(e => `<div class="pv-history-entry">${e}</div>`).join('');
+  // flip=true: newest at top (normal order reversed), flip=false: newest at bottom (normal order)
+  const entries = pvHistFlip() ? pvHistoryEntries.slice().reverse() : pvHistoryEntries;
+  hist.innerHTML = entries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
 }
 
 // Keyboard input for preview

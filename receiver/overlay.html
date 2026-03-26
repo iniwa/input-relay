@@ -171,6 +171,7 @@
   /* History */
   #history {
     display: flex;
+    flex-direction: column;
     gap: 2px;
     font-size: 18px;
     font-weight: bold;
@@ -251,8 +252,10 @@ function initPanelDrag() {
 
 document.addEventListener('mousemove', (e) => {
   if (!panelDrag) return;
-  panelDrag.el.style.left = (panelDrag.origLeft + e.clientX - panelDrag.startX) + 'px';
+  // Clear bottom anchor during drag so top takes effect
+  panelDrag.el.style.bottom = '';
   panelDrag.el.style.top = (panelDrag.origTop + e.clientY - panelDrag.startY) + 'px';
+  panelDrag.el.style.left = (panelDrag.origLeft + e.clientX - panelDrag.startX) + 'px';
 });
 
 document.addEventListener('mouseup', () => {
@@ -260,15 +263,22 @@ document.addEventListener('mouseup', () => {
   panelDrag.el.classList.remove('dragging');
   if (config) {
     if (!config.layout) config.layout = {};
-    config.layout[panelDrag.key] = {
+    if (!config.layout[mode]) config.layout[mode] = {};
+    const isHistBottom = panelDrag.key === 'history' && !(config?.inputHistory?.[mode]?.flip);
+    const y = isHistBottom
+      ? panelDrag.el.offsetTop + panelDrag.el.offsetHeight
+      : panelDrag.el.offsetTop;
+    config.layout[mode][panelDrag.key] = {
+      ...(config.layout[mode][panelDrag.key] || {}),
       x: panelDrag.el.offsetLeft,
-      y: panelDrag.el.offsetTop
+      y
     };
     fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     }).catch(() => {});
+    applyLayout();
   }
   panelDrag = null;
 });
@@ -285,10 +295,20 @@ function applyLayout() {
   kdEl.style.transform       = `scale(${kd.scale || 1})`;
   kdEl.style.transformOrigin = 'top left';
   const hiEl = document.getElementById('history');
-  hiEl.style.left            = hi.x + 'px';
-  hiEl.style.top             = hi.y + 'px';
-  hiEl.style.transform       = `scale(${hi.scale || 1})`;
-  hiEl.style.transformOrigin = 'top left';
+  const flip = !!(config?.inputHistory?.[mode]?.flip);
+  hiEl.style.left = hi.x + 'px';
+  if (flip) {
+    // Newest at top: anchor from top, grow downward
+    hiEl.style.top    = hi.y + 'px';
+    hiEl.style.bottom = '';
+    hiEl.style.transformOrigin = 'top left';
+  } else {
+    // Newest at bottom: anchor from bottom, grow upward
+    hiEl.style.top    = '';
+    hiEl.style.bottom = (document.documentElement.clientHeight - hi.y) + 'px';
+    hiEl.style.transformOrigin = 'bottom left';
+  }
+  hiEl.style.transform = `scale(${hi.scale || 1})`;
 }
 
 // --- Numpad notation ---
@@ -652,9 +672,7 @@ function buildLayout() {
   histEl.innerHTML = '';
   const cfg = histCfg();
   const max = cfg.maxEntries ?? 10;
-  const flip = !!cfg.flip;
   histEl.style.display = max === 0 ? 'none' : 'flex';
-  histEl.style.flexDirection = flip ? 'column' : 'column-reverse';
   histEl.style.opacity = '1';
   if (max > 0) {
     const div = document.createElement('div');
@@ -751,8 +769,13 @@ function recordCurrentState() {
   div.textContent = text;
   const entry = { text, el: div, fadeTimer: null, removeTimer: null };
 
-  // Always prepend in DOM; flex-direction handles visual order
-  histEl.insertBefore(div, histEl.firstChild);
+  // flip=false: newest at bottom → appendChild, anchor from bottom
+  // flip=true:  newest at top    → prepend, anchor from top
+  if (cfg.flip) {
+    histEl.insertBefore(div, histEl.firstChild);
+  } else {
+    histEl.appendChild(div);
+  }
   historyEntries.push(entry);
 
   // Start per-entry timer

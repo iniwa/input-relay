@@ -257,7 +257,7 @@
         "col": 9
       },
       {
-        "key": "a",
+        "key": "z",
         "gamepad": "axis_4_pos",
         "label": "MP+MK",
         "row": 3,
@@ -381,7 +381,7 @@
     },
     "leverless": {
       "maxEntries": 15,
-      "idleTimeoutMs": 3000,
+      "idleTimeoutMs": 1000,
       "flip": false
     },
     "controller": {
