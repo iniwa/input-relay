@@ -343,20 +343,20 @@
         "scale": 1
       },
       "history": {
-        "x": 32,
-        "y": 875,
+        "x": 475,
+        "y": 139,
         "scale": 1
       }
     },
     "leverless": {
       "keyDisplay": {
-        "x": 64,
-        "y": 1051,
+        "x": 60,
+        "y": 1040,
         "scale": 1
       },
       "history": {
-        "x": 21,
-        "y": 640,
+        "x": 80,
+        "y": 1147,
         "scale": 1
       }
     },
@@ -375,7 +375,7 @@
   },
   "inputHistory": {
     "keyboard": {
-      "maxEntries": 0,
+      "maxEntries": 1,
       "idleTimeoutMs": 3000,
       "flip": false
     },
