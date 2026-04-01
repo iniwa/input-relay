@@ -338,13 +338,18 @@
   "layout": {
     "keyboard": {
       "keyDisplay": {
-        "x": 91,
-        "y": 107,
+        "x": 64,
+        "y": 48,
         "scale": 1
       },
       "history": {
-        "x": 475,
-        "y": 139,
+        "x": 453,
+        "y": 85,
+        "scale": 1
+      },
+      "mouseTrail": {
+        "x": 700,
+        "y": 48,
         "scale": 1
       }
     },
@@ -358,6 +363,11 @@
         "x": 80,
         "y": 1147,
         "scale": 1
+      },
+      "mouseTrail": {
+        "x": 700,
+        "y": 1040,
+        "scale": 1
       }
     },
     "controller": {
@@ -369,6 +379,11 @@
       "history": {
         "x": 32,
         "y": 875,
+        "scale": 1
+      },
+      "mouseTrail": {
+        "x": 700,
+        "y": 784,
         "scale": 1
       }
     }
@@ -389,6 +404,14 @@
       "idleTimeoutMs": 3000,
       "flip": false
     }
+  },
+  "mouseTrail": {
+    "trailDurationMs": 2000,
+    "frameSize": 200,
+    "trailColor": "#ffffff",
+    "dotSize": 4,
+    "lineWidth": 2,
+    "sensitivity": 1.0
   },
   "displayDelayMs": 70,
   "afterglowMs": 80

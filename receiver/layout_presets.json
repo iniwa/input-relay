@@ -1,0 +1,25 @@
+{
+  "keyboard": {
+    "FF14": {
+      "layout": {
+        "keyDisplay": {
+          "x": 64,
+          "y": 48,
+          "scale": 1
+        },
+        "history": {
+          "x": 453,
+          "y": 85,
+          "scale": 1
+        }
+      },
+      "inputHistory": {
+        "maxEntries": 1,
+        "idleTimeoutMs": 3000,
+        "flip": false
+      }
+    }
+  },
+  "leverless": {},
+  "controller": {}
+}

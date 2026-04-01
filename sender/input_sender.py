@@ -161,6 +161,36 @@ def on_mouse_click(x, y, button, pressed):
     enqueue_monitor(msg)
 
 
+# --- Mouse movement (60Hz throttled) ---
+_last_mouse_pos = [None, None]
+_last_mouse_send = [0.0]
+_MOUSE_SEND_INTERVAL = 1.0 / 60  # ~16ms
+
+def on_mouse_move(x, y):
+    now = time.time()
+    if now - _last_mouse_send[0] < _MOUSE_SEND_INTERVAL:
+        _last_mouse_pos[0], _last_mouse_pos[1] = x, y
+        return
+    prev_x, prev_y = _last_mouse_pos
+    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
+    _last_mouse_send[0] = now
+    if prev_x is None:
+        return
+    dx = x - prev_x
+    dy = y - prev_y
+    if dx == 0 and dy == 0:
+        return
+    msg = json.dumps({
+        "type": "mouse_move",
+        "dx": dx,
+        "dy": dy,
+        "source": "mouse",
+        "timestamp": now,
+    })
+    event_queue.put(msg)
+    enqueue_monitor(msg)
+
+
 def scan_controllers():
     """Scan for available controllers and return list of info dicts."""
     global _controller_info
@@ -558,7 +588,7 @@ async def main():
     kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     kb_listener.start()
 
-    mouse_listener = mouse.Listener(on_click=on_mouse_click)
+    mouse_listener = mouse.Listener(on_click=on_mouse_click, on_move=on_mouse_move)
     mouse_listener.start()
 
     gp_thread = threading.Thread(target=gamepad_loop, daemon=True)

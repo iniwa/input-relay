@@ -416,6 +416,7 @@
     <a href="/overlay.html" target="_blank">オーバーレイ</a>
     <a href="/input" target="_blank">キー表示のみ</a>
     <a href="/history" target="_blank">履歴のみ</a>
+    <a href="/mouse-trail" target="_blank">マウス軌跡のみ</a>
   </div>
   <button onclick="restartServer()" style="margin-left:auto;padding:6px 16px;background:#c04040;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:bold;">サーバー再起動</button>
 </div>
@@ -426,6 +427,7 @@
   <div class="tab" data-tab="leverless">Leverless レイアウト</div>
   <div class="tab" data-tab="controller">Controller レイアウト</div>
   <div class="tab" data-tab="history">入力履歴</div>
+  <div class="tab" data-tab="mouse-trail">マウス軌跡</div>
   <div class="tab" data-tab="layout">レイアウト調整</div>
   <div class="tab" data-tab="debug">デバッグ</div>
 </div>
@@ -690,6 +692,47 @@
   </div>
 </div>
 
+<!-- Mouse Trail -->
+<div class="tab-content" id="tab-mouse-trail">
+  <p class="hint" style="margin-bottom:12px">
+    <strong>別ブラウザソースで使う方法:</strong> OBSで <code>/mouse-trail</code> を指定するとマウス軌跡のみ表示します。<br>
+    ※ デフォルト (<code>/overlay.html</code>) ではキー表示・履歴と一緒に表示されます。
+  </p>
+
+  <h2>軌跡設定</h2>
+  <div class="form-group">
+    <label>表示時間 (ms)</label>
+    <input type="number" id="mt-duration" value="2000" min="500" max="10000" step="100">
+    <span style="font-size:12px;color:#666">軌跡が表示される時間。古い軌跡からフェードアウト</span>
+  </div>
+  <div class="form-group">
+    <label>フレームサイズ (px)</label>
+    <input type="number" id="mt-frame-size" value="200" min="50" max="600" step="10">
+    <span style="font-size:12px;color:#666">表示枠のサイズ（正方形）</span>
+  </div>
+  <div class="form-group">
+    <label>軌跡色</label>
+    <input type="color" id="mt-color" value="#ffffff">
+  </div>
+  <div class="form-group">
+    <label>光点サイズ</label>
+    <input type="number" id="mt-dot-size" value="4" min="1" max="20" step="1">
+  </div>
+  <div class="form-group">
+    <label>線の太さ</label>
+    <input type="number" id="mt-line-width" value="2" min="1" max="10" step="1">
+  </div>
+  <div class="form-group">
+    <label>感度</label>
+    <input type="number" id="mt-sensitivity" value="1.0" min="0.1" max="5.0" step="0.1">
+    <span style="font-size:12px;color:#666">マウス移動量のスケール倍率。大きいほど軌跡が広がる</span>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
+  </div>
+</div>
+
 <!-- Layout -->
 <div class="tab-content" id="tab-layout">
   <div class="form-group" style="margin-bottom:16px">
@@ -731,6 +774,16 @@
     <input type="number" id="layout-hi-y" value="16" onchange="onLayoutInputChange()">
     <label style="margin-left:16px">倍率</label>
     <input type="number" id="layout-hi-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:80px">
+  </div>
+
+  <h2>マウス軌跡パネル</h2>
+  <div class="form-group">
+    <label>X</label>
+    <input type="number" id="layout-mt-x" value="700" onchange="onLayoutInputChange()">
+    <label style="margin-left:8px">Y</label>
+    <input type="number" id="layout-mt-y" value="48" onchange="onLayoutInputChange()">
+    <label style="margin-left:16px">倍率</label>
+    <input type="number" id="layout-mt-scale" value="1" step="0.05" min="0.1" max="5" onchange="onLayoutInputChange()" style="width:80px">
   </div>
 
   <div class="btn-row">
@@ -1137,6 +1190,10 @@ function updateLayoutInputs() {
   document.getElementById('layout-hi-x').value     = hi.x;
   document.getElementById('layout-hi-y').value     = hi.y;
   document.getElementById('layout-hi-scale').value = hi.scale ?? 1;
+  const mt = ml.mouseTrail || { x: 700, y: 48, scale: 1 };
+  document.getElementById('layout-mt-x').value     = mt.x;
+  document.getElementById('layout-mt-y').value     = mt.y;
+  document.getElementById('layout-mt-scale').value = mt.scale ?? 1;
   const lbl = document.getElementById('layout-mode-label');
   if (lbl) lbl.textContent = previewMode.toUpperCase();
 }
@@ -1153,6 +1210,11 @@ function onLayoutInputChange() {
     x:     +document.getElementById('layout-hi-x').value,
     y:     +document.getElementById('layout-hi-y').value,
     scale: +document.getElementById('layout-hi-scale').value,
+  };
+  overlayConfig.layout[previewMode].mouseTrail = {
+    x:     +document.getElementById('layout-mt-x').value,
+    y:     +document.getElementById('layout-mt-y').value,
+    scale: +document.getElementById('layout-mt-scale').value,
   };
   applyPvLayout();
 }
@@ -1727,6 +1789,15 @@ function renderHistory() {
   document.getElementById('hist-ct-max').value   = ct.maxEntries    ?? 10;
   document.getElementById('hist-ct-idle').value  = ct.idleTimeoutMs ?? 3000;
   document.getElementById('hist-ct-flip').checked = !!ct.flip;
+
+  // Mouse trail
+  const mt = overlayConfig.mouseTrail || {};
+  document.getElementById('mt-duration').value    = mt.trailDurationMs ?? 2000;
+  document.getElementById('mt-frame-size').value  = mt.frameSize       ?? 200;
+  document.getElementById('mt-color').value       = mt.trailColor      || '#ffffff';
+  document.getElementById('mt-dot-size').value    = mt.dotSize         ?? 4;
+  document.getElementById('mt-line-width').value  = mt.lineWidth       ?? 2;
+  document.getElementById('mt-sensitivity').value = mt.sensitivity     ?? 1.0;
 }
 
 async function saveOverlayConfig() {
@@ -1762,9 +1833,24 @@ async function saveOverlayConfig() {
     y:     +document.getElementById('layout-hi-y').value,
     scale: +document.getElementById('layout-hi-scale').value,
   };
+  overlayConfig.layout[previewMode].mouseTrail = {
+    x:     +document.getElementById('layout-mt-x').value,
+    y:     +document.getElementById('layout-mt-y').value,
+    scale: +document.getElementById('layout-mt-scale').value,
+  };
 
   overlayConfig.displayDelayMs = +document.getElementById('display-delay').value;
   overlayConfig.afterglowMs    = +document.getElementById('afterglow-ms').value;
+
+  // Mouse trail settings
+  overlayConfig.mouseTrail = {
+    trailDurationMs: +document.getElementById('mt-duration').value,
+    frameSize:       +document.getElementById('mt-frame-size').value,
+    trailColor:       document.getElementById('mt-color').value,
+    dotSize:         +document.getElementById('mt-dot-size').value,
+    lineWidth:       +document.getElementById('mt-line-width').value,
+    sensitivity:     +document.getElementById('mt-sensitivity').value,
+  };
 
   overlayConfig.inputHistory = {
     keyboard: {
@@ -2140,7 +2226,8 @@ async function init() {
   }
   ['keyboard', 'leverless', 'controller'].forEach(m => {
     if (!overlayConfig.layout) overlayConfig.layout = {};
-    if (!overlayConfig.layout[m]) overlayConfig.layout[m] = { keyDisplay: { x: 16, y: 16, scale: 1 }, history: { x: 600, y: 16, scale: 1 } };
+    if (!overlayConfig.layout[m]) overlayConfig.layout[m] = { keyDisplay: { x: 16, y: 16, scale: 1 }, history: { x: 600, y: 16, scale: 1 }, mouseTrail: { x: 700, y: 48, scale: 1 } };
+    if (!overlayConfig.layout[m].mouseTrail) overlayConfig.layout[m].mouseTrail = { x: 700, y: 48, scale: 1 };
   });
 
   document.getElementById('sender-host').value = senderConfig.host || '';

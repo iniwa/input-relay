@@ -97,7 +97,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
             self._json_response(load_config())
             return
 
-        if path in ("history", "input"):
+        if path in ("history", "input", "mouse-trail"):
             self._serve_overlay_with_mode(path)
             return
 
@@ -277,7 +277,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _serve_overlay_with_mode(self, mode):
-        hide = "#key-display" if mode == "history" else "#history"
+        if mode == "mouse-trail":
+            hide = "#key-display,#history"
+        elif mode == "history":
+            hide = "#key-display"
+        else:
+            hide = "#history"
         file_path = OVERLAY_DIR / "overlay.html"
         content = file_path.read_text(encoding="utf-8")
         inject = (
