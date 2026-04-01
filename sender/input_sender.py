@@ -143,10 +143,38 @@ def on_release(key):
     enqueue_monitor(msg)
 
 
+# --- Mouse movement (60Hz throttled) ---
+_last_mouse_pos = [None, None]
+_last_mouse_send = [0.0]
+_MOUSE_SEND_INTERVAL = 1.0 / 60  # ~16ms
+
+
+def _send_mouse_delta(x, y):
+    """Calculate and send mouse delta from last known position."""
+    prev_x, prev_y = _last_mouse_pos
+    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
+    if prev_x is None:
+        return
+    dx = x - prev_x
+    dy = y - prev_y
+    if dx == 0 and dy == 0:
+        return
+    msg = json.dumps({
+        "type": "mouse_move",
+        "dx": dx,
+        "dy": dy,
+        "source": "mouse",
+        "timestamp": time.time(),
+    })
+    event_queue.put(msg)
+    enqueue_monitor(msg)
+
+
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
-    # Sync position so trail doesn't jump after drag
-    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
+    # Send delta for position accumulated during drag
+    _send_mouse_delta(x, y)
+    _last_mouse_send[0] = time.time()
     btn_map = {
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
@@ -163,34 +191,13 @@ def on_mouse_click(x, y, button, pressed):
     enqueue_monitor(msg)
 
 
-# --- Mouse movement (60Hz throttled) ---
-_last_mouse_pos = [None, None]
-_last_mouse_send = [0.0]
-_MOUSE_SEND_INTERVAL = 1.0 / 60  # ~16ms
-
 def on_mouse_move(x, y):
     now = time.time()
     if now - _last_mouse_send[0] < _MOUSE_SEND_INTERVAL:
         _last_mouse_pos[0], _last_mouse_pos[1] = x, y
         return
-    prev_x, prev_y = _last_mouse_pos
-    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
     _last_mouse_send[0] = now
-    if prev_x is None:
-        return
-    dx = x - prev_x
-    dy = y - prev_y
-    if dx == 0 and dy == 0:
-        return
-    msg = json.dumps({
-        "type": "mouse_move",
-        "dx": dx,
-        "dy": dy,
-        "source": "mouse",
-        "timestamp": now,
-    })
-    event_queue.put(msg)
-    enqueue_monitor(msg)
+    _send_mouse_delta(x, y)
 
 
 def scan_controllers():
