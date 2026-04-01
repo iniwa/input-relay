@@ -143,26 +143,24 @@ def on_release(key):
     enqueue_monitor(msg)
 
 
-# --- Mouse movement (60Hz throttled) ---
-_last_mouse_pos = [None, None]
+# --- Mouse movement (Raw Input API, 60Hz throttled) ---
 _last_mouse_send = [0.0]
 _MOUSE_SEND_INTERVAL = 1.0 / 60  # ~16ms
+_raw_mouse_accum = [0, 0]  # accumulated dx, dy between sends
 
 
-def _send_mouse_delta(x, y):
-    """Calculate and send mouse delta from last known position."""
-    prev_x, prev_y = _last_mouse_pos
-    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
-    if prev_x is None:
+def _flush_mouse_accum():
+    """Send accumulated raw mouse deltas and reset accumulator."""
+    adx, ady = _raw_mouse_accum
+    if adx == 0 and ady == 0:
         return
-    dx = x - prev_x
-    dy = y - prev_y
-    if dx == 0 and dy == 0:
-        return
+    _raw_mouse_accum[0] = 0
+    _raw_mouse_accum[1] = 0
+    _last_mouse_send[0] = time.time()
     msg = json.dumps({
         "type": "mouse_move",
-        "dx": dx,
-        "dy": dy,
+        "dx": adx,
+        "dy": ady,
         "source": "mouse",
         "timestamp": time.time(),
     })
@@ -170,11 +168,165 @@ def _send_mouse_delta(x, y):
     enqueue_monitor(msg)
 
 
+def raw_mouse_loop():
+    """Thread: receives raw mouse deltas via Windows Raw Input API.
+    Works even when games lock the cursor to screen center."""
+    import ctypes
+    from ctypes import wintypes, WINFUNCTYPE, POINTER, byref, sizeof
+
+    user32 = ctypes.windll.user32
+
+    # Constants
+    WM_INPUT = 0x00FF
+    RID_INPUT = 0x10000003
+    RIM_TYPEMOUSE = 0
+    RIDEV_INPUTSINK = 0x00000100
+    MOUSE_MOVE_ABSOLUTE = 0x01
+    PM_REMOVE = 0x0001
+
+    WNDPROC_TYPE = WINFUNCTYPE(
+        ctypes.c_long, wintypes.HWND, wintypes.UINT,
+        wintypes.WPARAM, wintypes.LPARAM,
+    )
+
+    class RAWINPUTDEVICE(ctypes.Structure):
+        _fields_ = [
+            ("usUsagePage", wintypes.USHORT),
+            ("usUsage", wintypes.USHORT),
+            ("dwFlags", wintypes.DWORD),
+            ("hwndTarget", wintypes.HWND),
+        ]
+
+    class RAWINPUTHEADER(ctypes.Structure):
+        _fields_ = [
+            ("dwType", wintypes.DWORD),
+            ("dwSize", wintypes.DWORD),
+            ("hDevice", wintypes.HANDLE),
+            ("wParam", wintypes.WPARAM),
+        ]
+
+    class _ButtonsUnion(ctypes.Union):
+        class _S(ctypes.Structure):
+            _fields_ = [
+                ("usButtonFlags", wintypes.USHORT),
+                ("usButtonData", ctypes.c_short),
+            ]
+        _fields_ = [("ulButtons", wintypes.ULONG), ("s", _S)]
+
+    class RAWMOUSE(ctypes.Structure):
+        _fields_ = [
+            ("usFlags", wintypes.USHORT),
+            ("u", _ButtonsUnion),
+            ("ulRawButtons", wintypes.ULONG),
+            ("lLastX", wintypes.LONG),
+            ("lLastY", wintypes.LONG),
+            ("ulExtraInformation", wintypes.ULONG),
+        ]
+
+    class RAWINPUT(ctypes.Structure):
+        _fields_ = [
+            ("header", RAWINPUTHEADER),
+            ("mouse", RAWMOUSE),
+        ]
+
+    class WNDCLASSEXW(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.UINT),
+            ("style", wintypes.UINT),
+            ("lpfnWndProc", WNDPROC_TYPE),
+            ("cbClsExtra", ctypes.c_int),
+            ("cbWndExtra", ctypes.c_int),
+            ("hInstance", wintypes.HINSTANCE),
+            ("hIcon", wintypes.HICON),
+            ("hCursor", wintypes.HANDLE),
+            ("hbrBackground", wintypes.HANDLE),
+            ("lpszMenuName", wintypes.LPCWSTR),
+            ("lpszClassName", wintypes.LPCWSTR),
+            ("hIconSm", wintypes.HICON),
+        ]
+
+    # Set argtypes for GetRawInputData
+    user32.GetRawInputData.argtypes = [
+        wintypes.HANDLE, wintypes.UINT, ctypes.c_void_p,
+        POINTER(wintypes.UINT), wintypes.UINT,
+    ]
+    user32.GetRawInputData.restype = wintypes.UINT
+
+    def wnd_proc(hwnd, msg_id, wparam, lparam):
+        if msg_id == WM_INPUT:
+            buf = ctypes.create_string_buffer(256)
+            size = wintypes.UINT(256)
+            result = user32.GetRawInputData(
+                lparam, RID_INPUT, buf, byref(size),
+                sizeof(RAWINPUTHEADER),
+            )
+            if result > 0:
+                raw = ctypes.cast(buf, POINTER(RAWINPUT)).contents
+                if (raw.header.dwType == RIM_TYPEMOUSE
+                        and not (raw.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)):
+                    dx = raw.mouse.lLastX
+                    dy = raw.mouse.lLastY
+                    if dx != 0 or dy != 0:
+                        _raw_mouse_accum[0] += dx
+                        _raw_mouse_accum[1] += dy
+                        now = time.time()
+                        if now - _last_mouse_send[0] >= _MOUSE_SEND_INTERVAL:
+                            _flush_mouse_accum()
+            return 0
+        return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
+
+    # prevent GC of callback
+    proc = WNDPROC_TYPE(wnd_proc)
+
+    hinstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+
+    wc = WNDCLASSEXW()
+    wc.cbSize = sizeof(WNDCLASSEXW)
+    wc.lpfnWndProc = proc
+    wc.hInstance = hinstance
+    wc.lpszClassName = "RawMouseInput"
+
+    if not user32.RegisterClassExW(byref(wc)):
+        print("[RawMouse] Failed to register window class")
+        return
+
+    hwnd = user32.CreateWindowExW(
+        0, "RawMouseInput", "", 0,
+        0, 0, 0, 0,
+        None, None, hinstance, None,
+    )
+    if not hwnd:
+        print("[RawMouse] Failed to create window")
+        return
+
+    # Register for raw mouse input
+    rid = RAWINPUTDEVICE()
+    rid.usUsagePage = 0x01  # HID_USAGE_PAGE_GENERIC
+    rid.usUsage = 0x02      # HID_USAGE_GENERIC_MOUSE
+    rid.dwFlags = RIDEV_INPUTSINK
+    rid.hwndTarget = hwnd
+
+    if not user32.RegisterRawInputDevices(byref(rid), 1, sizeof(RAWINPUTDEVICE)):
+        print("[RawMouse] Failed to register raw input device")
+        return
+
+    print("[RawMouse] Raw mouse input listener started")
+
+    # Message pump
+    msg = wintypes.MSG()
+    while running:
+        while user32.PeekMessageW(byref(msg), hwnd, 0, 0, PM_REMOVE):
+            user32.TranslateMessage(byref(msg))
+            user32.DispatchMessageW(byref(msg))
+        # Flush any remaining accumulated deltas
+        now = time.time()
+        if now - _last_mouse_send[0] >= _MOUSE_SEND_INTERVAL:
+            _flush_mouse_accum()
+        time.sleep(0.001)
+
+
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
-    # Send delta for position accumulated during drag
-    _send_mouse_delta(x, y)
-    _last_mouse_send[0] = time.time()
     btn_map = {
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
@@ -189,15 +341,6 @@ def on_mouse_click(x, y, button, pressed):
     msg = make_event(etype, key_str, "mouse")
     event_queue.put(msg)
     enqueue_monitor(msg)
-
-
-def on_mouse_move(x, y):
-    now = time.time()
-    if now - _last_mouse_send[0] < _MOUSE_SEND_INTERVAL:
-        _last_mouse_pos[0], _last_mouse_pos[1] = x, y
-        return
-    _last_mouse_send[0] = now
-    _send_mouse_delta(x, y)
 
 
 def scan_controllers():
@@ -597,8 +740,11 @@ async def main():
     kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     kb_listener.start()
 
-    mouse_listener = mouse.Listener(on_click=on_mouse_click, on_move=on_mouse_move)
+    mouse_listener = mouse.Listener(on_click=on_mouse_click)
     mouse_listener.start()
+
+    raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
+    raw_mouse_thread.start()
 
     gp_thread = threading.Thread(target=gamepad_loop, daemon=True)
     gp_thread.start()
