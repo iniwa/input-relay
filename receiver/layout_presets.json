@@ -11,6 +11,11 @@
           "x": 453,
           "y": 85,
           "scale": 1
+        },
+        "mouseTrail": {
+          "x": 550,
+          "y": 180,
+          "scale": 1
         }
       },
       "inputHistory": {
