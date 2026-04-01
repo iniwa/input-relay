@@ -390,7 +390,7 @@
   },
   "inputHistory": {
     "keyboard": {
-      "maxEntries": 1,
+      "maxEntries": 0,
       "idleTimeoutMs": 3000,
       "flip": false
     },
@@ -411,7 +411,7 @@
     "trailColor": "#ffffff",
     "dotSize": 4,
     "lineWidth": 2,
-    "sensitivity": 0.9
+    "sensitivity": 0.4
   },
   "displayDelayMs": 70,
   "afterglowMs": 80
