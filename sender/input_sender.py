@@ -145,6 +145,8 @@ def on_release(key):
 
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
+    # Sync position so trail doesn't jump after drag
+    _last_mouse_pos[0], _last_mouse_pos[1] = x, y
     btn_map = {
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
