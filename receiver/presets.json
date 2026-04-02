@@ -143,35 +143,35 @@
           {
             "key": "mouse_right",
             "label": "RClick",
-            "row": 1,
+            "row": 0,
             "col": 9,
             "width": 1
           },
           {
             "key": "mouse_left",
             "label": "LClick",
-            "row": 1,
+            "row": 0,
             "col": 7,
             "width": 1
           },
           {
             "key": "mouse_middle",
             "label": "MClick",
-            "row": 1,
+            "row": 0,
             "col": 8,
             "width": 1
           },
           {
             "key": "mouse_x1",
             "label": "Side1",
-            "row": 3,
+            "row": 2,
             "col": 7,
             "width": 1
           },
           {
             "key": "mouse_x2",
             "label": "Side2",
-            "row": 2,
+            "row": 1,
             "col": 7,
             "width": 1
           }
@@ -179,13 +179,18 @@
       },
       "layout": {
         "keyDisplay": {
-          "x": 91,
-          "y": 107,
+          "x": 64,
+          "y": 48,
           "scale": 1
         },
         "history": {
-          "x": 32,
-          "y": 875,
+          "x": 453,
+          "y": 85,
+          "scale": 1
+        },
+        "mouseTrail": {
+          "x": 550,
+          "y": 180,
           "scale": 1
         }
       },
