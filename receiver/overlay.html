@@ -452,7 +452,7 @@ function buildController(cfg) {
 
   const l2Wrap = document.createElement('div');
   l2Wrap.className = 'trigger-wrap';
-  l2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-l2" style="height:0"></div></div><div class="trigger-label">LT</div>';
+  l2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-l2" style="height:0"></div></div>';
   topRow.appendChild(l2Wrap);
 
   if (lbDef) {
@@ -479,7 +479,7 @@ function buildController(cfg) {
 
   const r2Wrap = document.createElement('div');
   r2Wrap.className = 'trigger-wrap';
-  r2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-r2" style="height:0"></div></div><div class="trigger-label">RT</div>';
+  r2Wrap.innerHTML = '<div class="trigger-bar-bg"><div class="trigger-bar-fill" id="trigger-r2" style="height:0"></div></div>';
   topRow.appendChild(r2Wrap);
   display.appendChild(topRow);
 
@@ -498,11 +498,7 @@ function buildController(cfg) {
   lArea.className = 'stick-area';
   lArea.id = 'stick-left';
   lArea.innerHTML = '<div class="stick-dot"></div>';
-  const lLabel = document.createElement('div');
-  lLabel.className = 'stick-label';
-  lLabel.textContent = 'L';
   lWrap.appendChild(lArea);
-  lWrap.appendChild(lLabel);
   leftCluster.appendChild(lWrap);
 
   // D-pad
@@ -532,11 +528,7 @@ function buildController(cfg) {
       }
     }
   }
-  const dpadLabel = document.createElement('div');
-  dpadLabel.className = 'stick-label';
-  dpadLabel.textContent = 'D-Pad';
   dpadWrap.appendChild(dpad);
-  dpadWrap.appendChild(dpadLabel);
   leftCluster.appendChild(dpadWrap);
   mainRow.appendChild(leftCluster);
 
@@ -590,11 +582,7 @@ function buildController(cfg) {
     rArea.className = 'stick-area';
     rArea.id = 'stick-right';
     rArea.innerHTML = '<div class="stick-dot"></div>';
-    const rLabel = document.createElement('div');
-    rLabel.className = 'stick-label';
-    rLabel.textContent = 'R';
     rWrap.appendChild(rArea);
-    rWrap.appendChild(rLabel);
     rightCluster.appendChild(rWrap);
   }
 
