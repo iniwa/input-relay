@@ -13,13 +13,13 @@
           "scale": 1
         },
         "mouseTrail": {
-          "x": 550,
-          "y": 180,
+          "x": 565,
+          "y": 128,
           "scale": 1
         }
       },
       "inputHistory": {
-        "maxEntries": 1,
+        "maxEntries": 0,
         "idleTimeoutMs": 3000,
         "flip": false
       }

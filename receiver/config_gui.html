@@ -1236,6 +1236,7 @@ function renderPvMouseTrail() {
 
 function updatePreviewLayout() {
   const bindingTabs = ['keyboard', 'leverless', 'controller'];
+  const trailTabs = ['layout', 'mouse-trail'];
   const trail = document.getElementById('pv-mouse-trail');
   if (bindingTabs.includes(activeTab)) {
     trail.style.display = 'none';
@@ -1243,8 +1244,12 @@ function updatePreviewLayout() {
   } else {
     const hist = document.getElementById('pv-history');
     hist.style.display = pvHistMax() === 0 ? 'none' : 'flex';
-    trail.style.display = '';
-    renderPvMouseTrail();
+    if (trailTabs.includes(activeTab)) {
+      trail.style.display = 'block';
+      renderPvMouseTrail();
+    } else {
+      trail.style.display = 'none';
+    }
     applyPvLayout();
   }
 }
