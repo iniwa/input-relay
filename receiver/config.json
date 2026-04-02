@@ -180,28 +180,28 @@
       {
         "key": "a",
         "gamepad": "hat_0_left",
-        "label": "←",
+        "label": "◀",
         "row": 2,
         "col": 2
       },
       {
         "key": "s",
         "gamepad": "hat_0_down",
-        "label": "↓",
+        "label": "▼",
         "row": 2,
         "col": 3
       },
       {
         "key": "d",
         "gamepad": "hat_0_right",
-        "label": "→",
+        "label": "▶",
         "row": 2,
         "col": 4
       },
       {
         "key": "w",
         "gamepad": "hat_0_up",
-        "label": "↑",
+        "label": "▲",
         "row": 3,
         "col": 5
       }
@@ -382,8 +382,8 @@
         "scale": 1
       },
       "mouseTrail": {
-        "x": 690,
-        "y": 790,
+        "x": 674,
+        "y": 862,
         "scale": 1
       }
     }
@@ -411,7 +411,12 @@
     "trailColor": "#ffffff",
     "dotSize": 4,
     "lineWidth": 2,
-    "sensitivity": 0.4
+    "sensitivity": 0.4,
+    "visible": {
+      "keyboard": true,
+      "leverless": true,
+      "controller": true
+    }
   },
   "displayDelayMs": 70,
   "afterglowMs": 80

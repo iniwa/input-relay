@@ -338,7 +338,7 @@ function getNumpad() {
 }
 
 function getDirArrow(numpad) {
-  const arrows = { '1':'\u2199','2':'\u2193','3':'\u2198','4':'\u2190','5':'','6':'\u2192','7':'\u2196','8':'\u2191','9':'\u2197' };
+  const arrows = { '1':'\u25C3\u25BE','2':'\u25BC','3':'\u25BE\u25B9','4':'\u25C0','5':'','6':'\u25B6','7':'\u25C3\u25B4','8':'\u25B2','9':'\u25B4\u25B9' };
   return arrows[numpad] || '';
 }
 
@@ -857,12 +857,13 @@ function initMouseTrail() {
   canvas.height = size;
 
   // Show/hide based on display mode
-  if (DISPLAY_MODE === 'mouse-trail' || DISPLAY_MODE === 'all') {
-    mtEl.style.display = 'block';
-  } else {
+  if (!(DISPLAY_MODE === 'mouse-trail' || DISPLAY_MODE === 'all')) {
     mtEl.style.display = 'none';
     return;
   }
+  // Per-mode visibility
+  const vis = mt.visible || {};
+  mtEl.style.display = vis[mode] !== false ? 'block' : 'none';
 
   trailPoints = [];
   if (trailAnimId) cancelAnimationFrame(trailAnimId);
@@ -947,7 +948,12 @@ function drawTrailLoop() {
 
 function applyMouseTrailLayout() {
   const mtEl = document.getElementById('mouse-trail');
-  if (mtEl.style.display === 'none') return;
+  if (!(DISPLAY_MODE === 'mouse-trail' || DISPLAY_MODE === 'all')) return;
+  // Per-mode visibility
+  const vis = config?.mouseTrail?.visible || {};
+  const show = vis[mode] !== false;
+  mtEl.style.display = show ? 'block' : 'none';
+  if (!show) return;
   const layoutAll = config?.layout || {};
   const ml = layoutAll[mode] || {};
   const pos = ml.mouseTrail || { x: 700, y: 48, scale: 1 };
