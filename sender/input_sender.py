@@ -113,13 +113,16 @@ def load_pygame():
     pygame.joystick.init()
 
 
-def make_event(event_type, key, source="keyboard"):
-    return json.dumps({
+def make_event(event_type, key, source="keyboard", vk=None):
+    ev = {
         "type": event_type,
         "key": key,
         "source": source,
         "timestamp": time.time(),
-    })
+    }
+    if vk is not None:
+        ev["vk"] = vk
+    return json.dumps(ev)
 
 
 def key_to_str(key):
@@ -166,6 +169,18 @@ def enqueue_monitor(data):
             pass
 
 
+def _get_vk(key):
+    """Extract Windows virtual key code from a pynput key."""
+    vk = getattr(key, 'vk', None)
+    if vk is not None:
+        return vk
+    # pynput Key enum members have a value with vk
+    value = getattr(key, 'value', None)
+    if value is not None:
+        return getattr(value, 'vk', None)
+    return None
+
+
 def on_press(key):
     # Scroll Lock toggles remote control mode
     if key == keyboard.Key.scroll_lock:
@@ -175,19 +190,21 @@ def on_press(key):
         return  # Don't send Scroll Lock to receiver
 
     key_str = key_to_str(key)
+    vk = _get_vk(key)
     with _pressed_keys_lock:
         if key_str not in pressed_keys:
             pressed_keys.add(key_str)
-            msg = make_event("key_down", key_str)
+            msg = make_event("key_down", key_str, vk=vk)
             event_queue.put(msg)
             enqueue_monitor(msg)
 
 
 def on_release(key):
     key_str = key_to_str(key)
+    vk = _get_vk(key)
     with _pressed_keys_lock:
         pressed_keys.discard(key_str)
-    msg = make_event("key_up", key_str)
+    msg = make_event("key_up", key_str, vk=vk)
     event_queue.put(msg)
     enqueue_monitor(msg)
 

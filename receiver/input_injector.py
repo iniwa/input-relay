@@ -143,8 +143,10 @@ def replay_event(event):
         if key.startswith("mouse_"):
             inject_mouse_button(key, is_down)
             return
-        # Keyboard
+        # Keyboard: try name map first, fall back to VK code from sender
         vk = _KEY_TO_VK.get(key)
+        if vk is None:
+            vk = event.get("vk")
         if vk is not None:
             inject_key(vk, key_up=not is_down)
         return
