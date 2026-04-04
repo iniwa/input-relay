@@ -110,11 +110,30 @@ def _send_input(inp):
     user32.SendInput(1, byref(inp), sizeof(INPUT))
 
 
+# Extended keys that require KEYEVENTF_EXTENDEDKEY flag
+_EXTENDED_VKS = {
+    0x21, 0x22, 0x23, 0x24,  # Page Up/Down, End, Home
+    0x25, 0x26, 0x27, 0x28,  # Arrow keys
+    0x2D, 0x2E,              # Insert, Delete
+    0x5B, 0x5C,              # Win keys
+    0xA1, 0xA3, 0xA5,        # Right Shift, Right Ctrl, Right Alt
+}
+
+KEYEVENTF_EXTENDEDKEY = 0x0001
+
+
 def inject_key(vk, key_up=False):
+    scan = user32.MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC
+    flags = 0
+    if key_up:
+        flags |= KEYEVENTF_KEYUP
+    if vk in _EXTENDED_VKS:
+        flags |= KEYEVENTF_EXTENDEDKEY
     inp = INPUT()
     inp.type = INPUT_KEYBOARD
     inp.union.ki.wVk = vk
-    inp.union.ki.dwFlags = KEYEVENTF_KEYUP if key_up else 0
+    inp.union.ki.wScan = scan
+    inp.union.ki.dwFlags = flags
     _send_input(inp)
 
 
