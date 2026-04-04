@@ -15,11 +15,18 @@ import urllib.parse
 
 import websockets
 
+import input_injector
+
 browser_clients = set()
 _browser_lock = asyncio.Lock()
 sender_ws = None
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
+
+# Remote control state
+remote_control_enabled = False
+_rc_lock = threading.Lock()
+_rc_pressed_keys = set()  # track pressed keys for stuck-key prevention
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_PATH = OVERLAY_DIR / "config.json"
@@ -85,6 +92,30 @@ async def broadcast_to_browsers(message):
         )
 
 
+async def _send_to_sender(data):
+    """Send a message back to the sender over the existing WebSocket."""
+    if sender_ws:
+        try:
+            await sender_ws.send(json.dumps(data))
+        except Exception:
+            pass
+
+
+def _set_rc_state(enabled):
+    """Set remote control state and handle cleanup."""
+    global remote_control_enabled
+    with _rc_lock:
+        remote_control_enabled = enabled
+    state = "ENABLED" if enabled else "DISABLED"
+    print(f"[RemoteControl] {state}")
+    if not enabled:
+        input_injector.release_all(_rc_pressed_keys)
+    # Broadcast to browsers
+    msg = json.dumps({"type": "remote_control_state", "enabled": enabled})
+    if _ws_loop:
+        asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+
+
 class OverlayHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -107,6 +138,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
         if path == "api/layout-presets":
             self._json_response(load_layout_presets())
+            return
+
+        if path == "api/remote-control":
+            with _rc_lock:
+                enabled = remote_control_enabled
+            self._json_response({"enabled": enabled})
             return
 
         if path == "api/sender-config":
@@ -213,6 +250,22 @@ class OverlayHandler(BaseHTTPRequestHandler):
                     except Exception as e:
                         print(f"[WS] Refresh broadcast failed: {e}")
                 self._json_response({"ok": True})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+            return
+
+        if parsed.path == "/api/remote-control":
+            try:
+                data = json.loads(body)
+                enabled = bool(data.get("enabled", False))
+                _set_rc_state(enabled)
+                # Notify sender to toggle input suppression
+                if _ws_loop:
+                    asyncio.run_coroutine_threadsafe(
+                        _send_to_sender({"type": "remote_control", "enabled": enabled}),
+                        _ws_loop,
+                    )
+                self._json_response({"ok": True, "enabled": enabled})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
             return
@@ -352,6 +405,17 @@ async def sender_handler(ws):
     print(f"[Sender] Connected from {ws.remote_address}")
     try:
         async for msg in ws:
+            try:
+                event = json.loads(msg)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+            # Handle remote_control toggle from sender
+            if event.get("type") == "remote_control":
+                _set_rc_state(event.get("enabled", False))
+                continue
+
+            # Broadcast to browsers (existing behavior)
             async with _browser_lock:
                 clients = list(browser_clients)
             if clients:
@@ -359,9 +423,28 @@ async def sender_handler(ws):
                     *[client.send(msg) for client in clients],
                     return_exceptions=True,
                 )
+
+            # Remote control: inject as OS input
+            with _rc_lock:
+                rc_active = remote_control_enabled
+            if rc_active:
+                try:
+                    input_injector.replay_event(event)
+                    # Track pressed keys for stuck-key prevention
+                    if event.get("type") == "key_down":
+                        _rc_pressed_keys.add(event.get("key", ""))
+                    elif event.get("type") == "key_up":
+                        _rc_pressed_keys.discard(event.get("key", ""))
+                except Exception as e:
+                    print(f"[RemoteControl] Inject error: {e}")
     finally:
         if sender_ws is ws:
             sender_ws = None
+        # If remote control was active, disable it
+        with _rc_lock:
+            was_active = remote_control_enabled
+        if was_active:
+            _set_rc_state(False)
         print("[Sender] Disconnected")
 
 

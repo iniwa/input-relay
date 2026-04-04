@@ -176,7 +176,19 @@
   <div class="connection-status">
     <div class="connection-dot" id="wsDot"></div>
     <span id="wsStatus">確認中...</span>
+    <span id="remoteStatus" style="margin-left:20px;padding:4px 12px;border-radius:4px;font-size:13px;font-weight:bold;background:#2a4a2a;color:#6a6;">Remote: OFF</span>
   </div>
+</div>
+
+<!-- Shortcut Keys -->
+<div class="section">
+  <h2>ショートカットキー</h2>
+  <table style="width:auto;font-size:13px;">
+    <tr>
+      <td style="padding:4px 16px 4px 0;"><kbd style="background:#3a3a6a;padding:3px 10px;border-radius:4px;border:1px solid #555;font-family:inherit;">Scroll Lock</kbd></td>
+      <td style="padding:4px 0;color:#aaa;">リモート操作モード ON/OFF</td>
+    </tr>
+  </table>
 </div>
 
 <!-- Connection Settings -->
@@ -246,6 +258,19 @@ async function fetchStatus() {
       connecting: '接続試行中...'
     };
     statusText.textContent = `${labels[data.ws_status] || data.ws_status} — ${data.host}:${data.port}`;
+    // Update remote mode indicator
+    const rcEl = document.getElementById('remoteStatus');
+    if (rcEl) {
+      if (data.remote_mode) {
+        rcEl.textContent = 'Remote: ON';
+        rcEl.style.background = '#6a2a2a';
+        rcEl.style.color = '#f66';
+      } else {
+        rcEl.textContent = 'Remote: OFF';
+        rcEl.style.background = '#2a4a2a';
+        rcEl.style.color = '#6a6';
+      }
+    }
     return data;
   } catch (e) {
     return null;
@@ -382,6 +407,21 @@ function connectMonitor() {
   monitorWs.onmessage = (e) => {
     try {
       const ev = JSON.parse(e.data);
+      if (ev.type === 'remote_control_state') {
+        const rcEl = document.getElementById('remoteStatus');
+        if (rcEl) {
+          if (ev.enabled) {
+            rcEl.textContent = 'Remote: ON';
+            rcEl.style.background = '#6a2a2a';
+            rcEl.style.color = '#f66';
+          } else {
+            rcEl.textContent = 'Remote: OFF';
+            rcEl.style.background = '#2a4a2a';
+            rcEl.style.color = '#6a6';
+          }
+        }
+        return;
+      }
       if (ev.type === 'key_down') {
         activeKeys.add(ev.key);
       } else if (ev.type === 'key_up') {
