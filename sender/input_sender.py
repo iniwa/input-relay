@@ -409,6 +409,18 @@ def on_mouse_click(x, y, button, pressed):
     enqueue_monitor(msg)
 
 
+def on_mouse_scroll(x, y, dx, dy):
+    msg = json.dumps({
+        "type": "mouse_scroll",
+        "dx": dx,
+        "dy": dy,
+        "source": "mouse",
+        "timestamp": time.time(),
+    })
+    event_queue.put(msg)
+    enqueue_monitor(msg)
+
+
 def scan_controllers():
     """Scan for available controllers and return list of info dicts."""
     global _controller_info
@@ -852,7 +864,7 @@ def _restart_listeners(suppress=False):
         on_press=on_press, on_release=on_release, suppress=suppress,
     )
     _kb_listener.start()
-    _mouse_listener = mouse.Listener(on_click=on_mouse_click, suppress=suppress)
+    _mouse_listener = mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll, suppress=suppress)
     _mouse_listener.start()
     mode = "suppress" if suppress else "normal"
     print(f"[Listeners] Restarted ({mode})")

@@ -21,6 +21,9 @@ MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_XDOWN = 0x0080
 MOUSEEVENTF_XUP = 0x0100
+MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_HWHEEL = 0x01000
+WHEEL_DELTA = 120
 XBUTTON1 = 0x0001
 XBUTTON2 = 0x0002
 
@@ -74,12 +77,23 @@ _KEY_TO_VK = {
     # Misc
     "scroll_lock": 0x91, "pause": 0x13, "print_screen": 0x2C,
     "num_lock": 0x90,
-    # Punctuation (common on US layout)
+    # Symbol keys by pynput name
     "minus": 0xBD, "equal": 0xBB,
     "bracket_left": 0xDB, "bracket_right": 0xDD,
     "semicolon": 0xBA, "apostrophe": 0xDE,
     "comma": 0xBC, "period": 0xBE, "slash": 0xBF,
     "backslash": 0xDC, "grave": 0xC0,
+    # Symbol keys by character (key_to_str returns key.char for these)
+    "-": 0xBD, "=": 0xBB, "+": 0xBB,
+    "[": 0xDB, "]": 0xDD,
+    ";": 0xBA, "'": 0xDE, "\"": 0xDE,
+    ",": 0xBC, ".": 0xBE, "/": 0xBF,
+    "\\": 0xDC, "`": 0xC0, "~": 0xC0,
+    # Shifted symbols (key.char when shift is held)
+    "!": 0x31, "@": 0x32, "#": 0x33, "$": 0x34, "%": 0x35,
+    "^": 0x36, "&": 0x37, "*": 0x38, "(": 0x39, ")": 0x30,
+    "_": 0xBD, "{": 0xDB, "}": 0xDD,
+    ":": 0xBA, "<": 0xBC, ">": 0xBE, "?": 0xBF, "|": 0xDC,
 }
 
 # Mouse button -> (down_flag, up_flag, mouseData)
@@ -113,6 +127,22 @@ def inject_mouse_move(dx, dy):
     _send_input(inp)
 
 
+def inject_mouse_scroll(dx, dy):
+    """Inject mouse wheel scroll. dy=vertical, dx=horizontal."""
+    if dy:
+        inp = INPUT()
+        inp.type = INPUT_MOUSE
+        inp.union.mi.dwFlags = MOUSEEVENTF_WHEEL
+        inp.union.mi.mouseData = wintypes.DWORD(int(dy * WHEEL_DELTA))
+        _send_input(inp)
+    if dx:
+        inp = INPUT()
+        inp.type = INPUT_MOUSE
+        inp.union.mi.dwFlags = MOUSEEVENTF_HWHEEL
+        inp.union.mi.mouseData = wintypes.DWORD(int(dx * WHEEL_DELTA))
+        _send_input(inp)
+
+
 def inject_mouse_button(button, is_down):
     info = _MOUSE_BUTTONS.get(button)
     if not info:
@@ -135,6 +165,10 @@ def replay_event(event):
         dy = event.get("dy", 0)
         if dx or dy:
             inject_mouse_move(dx, dy)
+        return
+
+    if etype == "mouse_scroll":
+        inject_mouse_scroll(event.get("dx", 0), event.get("dy", 0))
         return
 
     if etype in ("key_down", "key_up"):
