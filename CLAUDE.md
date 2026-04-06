@@ -2,11 +2,18 @@
 
 > Detailed notes (Japanese): CLAUDE_ja.md
 
-## Communication
+## Coding Style
 - Write efficient code. Keep dependencies minimal; lightweight alternatives preferred.
 - **If the target PC is not specified, ask the user whether to run on Main PC or Sub PC before proceeding.**
 
 ## Environments
+
+### Work Location Detection
+- Working in `D:/Git/` → **Home (Sub PC)** (Main PC / Sub PC available)
+- Working in `C:/Git/` → **Home (Main PC)** (Main PC / Sub PC available)
+- Working in `C:/Users/**/Documents/git/` → **Remote PC**
+  - Remote PC lacks required environments (e.g. ollama). Focus on code adjustments only.
+- Can SSH into Raspberry Pi via `ssh iniwapi` to read code/logs from the Pi
 
 ### Main PC
 | Item | Detail |
@@ -36,6 +43,10 @@
 - **Purpose**: Utility scripts, automation, general-purpose tools
 - **Language**: No fixed preference; pick the simplest fit for the task
 - **Env**: Same as above — global install preferred, venv only when needed
+
+## Knowledge Persistence
+- Actively save design decisions, architecture notes, and reusable patterns to `docs/*.md`
+- Before starting work, check `docs/` for existing context that may be relevant
 
 ## Tooling
 - Use **Serena MCP** tools for code navigation and editing to maximize efficiency (symbol search, overview, replace, insert, etc.)

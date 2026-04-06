@@ -411,11 +411,11 @@
     "trailColor": "#ffffff",
     "dotSize": 4,
     "lineWidth": 2,
-    "sensitivity": 0.4,
+    "sensitivity": 0.1,
     "visible": {
       "keyboard": true,
-      "leverless": true,
-      "controller": true
+      "leverless": false,
+      "controller": false
     }
   },
   "displayDelayMs": 70,

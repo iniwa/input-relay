@@ -39,6 +39,13 @@ pressed_keys = set()
 _pressed_keys_lock = threading.Lock()
 _loop = None  # asyncio event loop, set in main()
 
+# Remote control mode
+_remote_mode = False
+_remote_lock = threading.Lock()
+_remote_toggle_event = None  # asyncio.Event, signals listener restart
+_kb_listener = None
+_mouse_listener = None
+
 # Controller selection state
 selected_controller_id = 0
 _controller_lock = threading.Lock()
@@ -63,6 +70,41 @@ _MODIFIER_MAP = {
 }
 
 
+def _freeze_cursor():
+    """Lock the cursor to its current position using ClipCursor."""
+    import ctypes
+    from ctypes import wintypes
+    pos = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pos))
+    rect = wintypes.RECT(pos.x, pos.y, pos.x + 1, pos.y + 1)
+    ctypes.windll.user32.ClipCursor(ctypes.byref(rect))
+
+
+def _unfreeze_cursor():
+    """Release cursor lock."""
+    import ctypes
+    ctypes.windll.user32.ClipCursor(None)
+
+
+def _set_remote_mode(enabled):
+    """Toggle remote control mode. Signals listener restart."""
+    global _remote_mode
+    with _remote_lock:
+        was = _remote_mode
+        _remote_mode = enabled
+    if was == enabled:
+        return
+    state = "ENABLED" if enabled else "DISABLED"
+    print(f"[Remote] {state}")
+    if enabled:
+        _freeze_cursor()
+    else:
+        _unfreeze_cursor()
+    # Signal asyncio thread to restart listeners and notify receiver
+    if _loop is not None and _remote_toggle_event is not None:
+        _loop.call_soon_threadsafe(_remote_toggle_event.set)
+
+
 def load_pygame():
     global pygame
     import pygame as pg
@@ -71,13 +113,16 @@ def load_pygame():
     pygame.joystick.init()
 
 
-def make_event(event_type, key, source="keyboard"):
-    return json.dumps({
+def make_event(event_type, key, source="keyboard", vk=None):
+    ev = {
         "type": event_type,
         "key": key,
         "source": source,
         "timestamp": time.time(),
-    })
+    }
+    if vk is not None:
+        ev["vk"] = vk
+    return json.dumps(ev)
 
 
 def key_to_str(key):
@@ -124,21 +169,42 @@ def enqueue_monitor(data):
             pass
 
 
+def _get_vk(key):
+    """Extract Windows virtual key code from a pynput key."""
+    vk = getattr(key, 'vk', None)
+    if vk is not None:
+        return vk
+    # pynput Key enum members have a value with vk
+    value = getattr(key, 'value', None)
+    if value is not None:
+        return getattr(value, 'vk', None)
+    return None
+
+
 def on_press(key):
+    # Scroll Lock toggles remote control mode
+    if key == keyboard.Key.scroll_lock:
+        with _remote_lock:
+            new_state = not _remote_mode
+        _set_remote_mode(new_state)
+        return  # Don't send Scroll Lock to receiver
+
     key_str = key_to_str(key)
+    vk = _get_vk(key)
     with _pressed_keys_lock:
         if key_str not in pressed_keys:
             pressed_keys.add(key_str)
-            msg = make_event("key_down", key_str)
+            msg = make_event("key_down", key_str, vk=vk)
             event_queue.put(msg)
             enqueue_monitor(msg)
 
 
 def on_release(key):
     key_str = key_to_str(key)
+    vk = _get_vk(key)
     with _pressed_keys_lock:
         pressed_keys.discard(key_str)
-    msg = make_event("key_up", key_str)
+    msg = make_event("key_up", key_str, vk=vk)
     event_queue.put(msg)
     enqueue_monitor(msg)
 
@@ -339,6 +405,18 @@ def on_mouse_click(x, y, button, pressed):
         return
     etype = "key_down" if pressed else "key_up"
     msg = make_event(etype, key_str, "mouse")
+    event_queue.put(msg)
+    enqueue_monitor(msg)
+
+
+def on_mouse_scroll(x, y, dx, dy):
+    msg = json.dumps({
+        "type": "mouse_scroll",
+        "dx": dx,
+        "dy": dy,
+        "source": "mouse",
+        "timestamp": time.time(),
+    })
     event_queue.put(msg)
     enqueue_monitor(msg)
 
@@ -549,11 +627,14 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             with _controller_lock:
                 sel = selected_controller_id
+            with _remote_lock:
+                remote = _remote_mode
             self._send_json({
                 "ws_status": ws_status,
                 "host": config.get("host", ""),
                 "port": config.get("port", 8888),
                 "selected_controller": sel,
+                "remote_mode": remote,
             })
         else:
             self.send_error(404)
@@ -673,6 +754,38 @@ def _trigger_reconnect():
         _reconnect_event.set()
 
 
+async def _recv_from_receiver(ws):
+    """Listen for messages from the receiver (e.g. remote control toggle from GUI)."""
+    try:
+        async for msg in ws:
+            try:
+                data = json.loads(msg)
+                if data.get("type") == "remote_control":
+                    _set_remote_mode(data.get("enabled", False))
+            except (json.JSONDecodeError, ValueError):
+                pass
+    except websockets.ConnectionClosed:
+        pass
+
+
+async def _send_loop(ws):
+    """Send queued events to receiver."""
+    while running:
+        get_task = asyncio.ensure_future(event_queue.get())
+        reconnect_task = asyncio.ensure_future(_reconnect_event.wait())
+        done, pending = await asyncio.wait(
+            [get_task, reconnect_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+        if reconnect_task in done:
+            print("[Sender] Reconnect requested...")
+            return
+        msg = get_task.result()
+        await ws.send(msg)
+
+
 async def sender(host, port):
     global ws_connection, ws_status, running, _reconnect_event
     _reconnect_event = asyncio.Event()
@@ -688,29 +801,30 @@ async def sender(host, port):
                 ws_status = "connected"
                 _reconnect_event.clear()
                 print("[Sender] Connected!")
-                while running:
-                    # Wait for either a message or a reconnect signal
-                    get_task = asyncio.ensure_future(event_queue.get())
-                    reconnect_task = asyncio.ensure_future(_reconnect_event.wait())
+
+                # Notify receiver of current remote mode state
+                with _remote_lock:
+                    if _remote_mode:
+                        await ws.send(json.dumps({"type": "remote_control", "enabled": True}))
+
+                # Run send loop and receive listener concurrently
+                send_task = asyncio.ensure_future(_send_loop(ws))
+                recv_task = asyncio.ensure_future(_recv_from_receiver(ws))
+                try:
                     done, pending = await asyncio.wait(
-                        [get_task, reconnect_task],
+                        [send_task, recv_task],
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for t in pending:
                         t.cancel()
-                    if reconnect_task in done:
-                        print("[Sender] Reconnect requested...")
-                        break
-                    msg = get_task.result()
-                    try:
-                        await ws.send(msg)
-                    except websockets.ConnectionClosed:
-                        break
+                except Exception:
+                    send_task.cancel()
+                    recv_task.cancel()
+
         except (ConnectionRefusedError, OSError) as e:
             ws_connection = None
             ws_status = "disconnected"
             print(f"[Sender] Receiver not found ({e}). Waiting for receiver...")
-            # Wait for either timeout or reconnect signal
             try:
                 await asyncio.wait_for(_reconnect_event.wait(), timeout=3.0)
                 _reconnect_event.clear()
@@ -731,17 +845,67 @@ async def sender(host, port):
             except asyncio.TimeoutError:
                 pass
 
+        # Safety: if disconnected while remote mode is on, disable it
+        with _remote_lock:
+            was_remote = _remote_mode
+        if was_remote:
+            _set_remote_mode(False)
+            print("[Remote] Auto-disabled due to disconnection")
+
+
+def _restart_listeners(suppress=False):
+    """Stop and restart keyboard/mouse listeners with optional suppress."""
+    global _kb_listener, _mouse_listener
+    if _kb_listener is not None:
+        _kb_listener.stop()
+    if _mouse_listener is not None:
+        _mouse_listener.stop()
+    _kb_listener = keyboard.Listener(
+        on_press=on_press, on_release=on_release, suppress=suppress,
+    )
+    _kb_listener.start()
+    _mouse_listener = mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll, suppress=suppress)
+    _mouse_listener.start()
+    mode = "suppress" if suppress else "normal"
+    print(f"[Listeners] Restarted ({mode})")
+
+
+async def _remote_toggle_handler():
+    """Watch for remote mode toggles and restart listeners accordingly."""
+    while running:
+        await _remote_toggle_event.wait()
+        _remote_toggle_event.clear()
+        with _remote_lock:
+            enabled = _remote_mode
+        _restart_listeners(suppress=enabled)
+        # Notify receiver
+        if ws_connection:
+            try:
+                await ws_connection.send(json.dumps({
+                    "type": "remote_control", "enabled": enabled,
+                }))
+            except Exception:
+                pass
+        # Broadcast to monitor clients
+        msg = json.dumps({
+            "type": "remote_control_state", "enabled": enabled,
+            "source": "system", "timestamp": __import__("time").time(),
+        })
+        enqueue_monitor(msg)
+
 
 async def main():
-    global _loop, _monitor_queue
+    global _loop, _monitor_queue, _remote_toggle_event
+    global _kb_listener, _mouse_listener
     _loop = asyncio.get_event_loop()
     _monitor_queue = asyncio.Queue()
+    _remote_toggle_event = asyncio.Event()
 
-    kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-    kb_listener.start()
+    _kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    _kb_listener.start()
 
-    mouse_listener = mouse.Listener(on_click=on_mouse_click)
-    mouse_listener.start()
+    _mouse_listener = mouse.Listener(on_click=on_mouse_click)
+    _mouse_listener.start()
 
     raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
     raw_mouse_thread.start()
@@ -754,11 +918,12 @@ async def main():
     http_thread = threading.Thread(target=start_http_server, args=(http_port,), daemon=True)
     http_thread.start()
 
-    # Start monitor WebSocket and sender concurrently
+    # Start monitor WebSocket, sender, and remote toggle handler concurrently
     monitor_port = config.get("monitor_port", 8083)
     await asyncio.gather(
         sender(config["host"], config["port"]),
         start_monitor_ws(monitor_port),
+        _remote_toggle_handler(),
     )
 
 

@@ -431,7 +431,8 @@
     <a href="/history" target="_blank">履歴のみ</a>
     <a href="/mouse-trail" target="_blank">マウス軌跡のみ</a>
   </div>
-  <button onclick="restartServer()" style="margin-left:auto;padding:6px 16px;background:#c04040;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:bold;">サーバー再起動</button>
+  <button id="rc-toggle" onclick="toggleRemoteControl()" style="margin-left:auto;padding:6px 16px;background:#2a6a2a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:bold;">🖥️ Remote: OFF</button>
+  <button onclick="restartServer()" style="margin-left:8px;padding:6px 16px;background:#c04040;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:bold;">サーバー再起動</button>
 </div>
 
 <div class="tabs">
@@ -462,6 +463,14 @@
   <div class="btn-row">
     <button class="btn-save" onclick="saveSenderConfig()">保存</button>
   </div>
+
+  <h2>ショートカットキー（Main PC）</h2>
+  <table style="width:auto;font-size:13px;margin-bottom:12px;">
+    <tr>
+      <td style="padding:4px 16px 4px 0;"><kbd style="background:#3a3a6a;padding:3px 10px;border-radius:4px;border:1px solid #555;font-family:inherit;">Scroll Lock</kbd></td>
+      <td style="padding:4px 0;color:#aaa;">リモート操作モード ON/OFF</td>
+    </tr>
+  </table>
 
   <h2>オーバーレイ表示モード切替</h2>
   <p class="hint">オーバーレイ (OBS ブラウザソース) の表示モードを切り替えます。</p>
@@ -905,6 +914,40 @@ async function restartServer() {
   } catch {}
   setTimeout(() => { location.reload(); }, 2000);
 }
+
+// --- Remote Control ---
+let rcEnabled = false;
+
+async function toggleRemoteControl() {
+  const newState = !rcEnabled;
+  try {
+    const res = await fetch('/api/remote-control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: newState }),
+    });
+    const data = await res.json();
+    updateRcButton(data.enabled);
+  } catch (e) {
+    showStatus('Remote Control 切替失敗', false);
+  }
+}
+
+function updateRcButton(enabled) {
+  rcEnabled = enabled;
+  const btn = document.getElementById('rc-toggle');
+  if (!btn) return;
+  if (enabled) {
+    btn.textContent = '🖥️ Remote: ON';
+    btn.style.background = '#c04040';
+  } else {
+    btn.textContent = '🖥️ Remote: OFF';
+    btn.style.background = '#2a6a2a';
+  }
+}
+
+// Fetch initial state
+fetch('/api/remote-control').then(r => r.json()).then(d => updateRcButton(d.enabled)).catch(() => {});
 
 // --- Label rendering with \n support in preview ---
 function pvSetLabel(el, label) {
@@ -2357,6 +2400,7 @@ function connectDebug() {
   debugWs.onmessage = (e) => {
     const data = JSON.parse(e.data);
     if (data.type === 'config') return;
+    if (data.type === 'remote_control_state') { updateRcButton(data.enabled); return; }
     if (data.type === 'axis_update' && !document.getElementById('debug-show-axis').checked) return;
     appendDebugLog(data);
     updateDebugPressed(data);
