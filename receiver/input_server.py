@@ -23,6 +23,10 @@ sender_ws = None
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
 
+# Standalone mode
+_standalone = False
+_standalone_queue = None  # asyncio.Queue, set in main() when standalone
+
 # Remote control state
 remote_control_enabled = False
 _rc_lock = threading.Lock()
@@ -457,20 +461,42 @@ async def ws_handler(ws):
         await sender_handler(ws)
 
 
-async def main(ws_port=8888, http_port=8080):
-    global _ws_loop, _ws_port
+def _standalone_on_event(msg):
+    """Callback from standalone_capture - puts event on async queue."""
+    if _standalone_queue:
+        _standalone_queue.put_nowait(msg)
+
+
+async def _standalone_broadcaster():
+    """Read events from standalone queue and broadcast to browsers."""
+    while True:
+        msg = await _standalone_queue.get()
+        await broadcast_to_browsers(msg)
+
+
+async def main(ws_port=8888, http_port=8080, standalone=False):
+    global _ws_loop, _ws_port, _standalone, _standalone_queue
     _ws_loop = asyncio.get_event_loop()
     _ws_port = ws_port
+    _standalone = standalone
 
     http_thread = threading.Thread(
         target=start_http_server, args=(http_port,), daemon=True
     )
     http_thread.start()
 
+    if standalone:
+        import standalone_capture
+        _standalone_queue = asyncio.Queue()
+        standalone_capture.start(_ws_loop, _standalone_on_event)
+
     print(f"[WS] Listening on port {ws_port}")
 
     async with websockets.serve(ws_handler, "0.0.0.0", ws_port):
-        await asyncio.Future()
+        if standalone:
+            await _standalone_broadcaster()
+        else:
+            await asyncio.Future()
 
 
 if __name__ == "__main__":
@@ -478,9 +504,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Input Server")
     parser.add_argument("--port", type=int, default=8888)
     parser.add_argument("--http-port", type=int, default=8081)
+    parser.add_argument("--standalone", action="store_true",
+                        help="Standalone mode: capture local input without sender")
     args = parser.parse_args()
 
+    if args.standalone:
+        print("[Mode] Standalone - local input capture")
+    else:
+        print("[Mode] Receiver - waiting for sender connection")
+
     try:
-        asyncio.run(main(args.port, args.http_port))
+        asyncio.run(main(args.port, args.http_port, args.standalone))
     except KeyboardInterrupt:
         print("\n[Server] Stopped.")
