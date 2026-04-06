@@ -122,8 +122,18 @@ _EXTENDED_VKS = {
 KEYEVENTF_EXTENDEDKEY = 0x0001
 
 
+# MapVirtualKeyW が 0 を返す日本語IMEキーのスキャンコード補正
+_IME_SCANCODE_MAP = {
+    0x15: 0x70,  # VK_KANA (カナ)
+    0x19: 0x29,  # VK_KANJI (半角/全角)
+    0xF4: 0x29,  # VK_OEM_ENLW
+}
+
+
 def inject_key(vk, key_up=False):
     scan = user32.MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC
+    if scan == 0:
+        scan = _IME_SCANCODE_MAP.get(vk, 0)
     flags = 0
     if key_up:
         flags |= KEYEVENTF_KEYUP
