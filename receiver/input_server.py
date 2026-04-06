@@ -29,9 +29,10 @@ _rc_lock = threading.Lock()
 _rc_pressed_keys = set()  # track pressed keys for stuck-key prevention
 
 OVERLAY_DIR = Path(__file__).parent
-CONFIG_PATH = OVERLAY_DIR / "config.json"
-PRESETS_PATH = OVERLAY_DIR / "presets.json"
-LAYOUT_PRESETS_PATH = OVERLAY_DIR / "layout_presets.json"
+CONFIG_DIR = OVERLAY_DIR.parent / "config"
+CONFIG_PATH = CONFIG_DIR / "config.json"
+PRESETS_PATH = CONFIG_DIR / "presets.json"
+LAYOUT_PRESETS_PATH = CONFIG_DIR / "layout_presets.json"
 
 
 def load_config():
@@ -148,7 +149,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
         if path == "api/sender-config":
             # Read sender config from sender dir (if accessible)
-            sender_cfg_path = OVERLAY_DIR.parent / "sender" / "sender_config.json"
+            sender_cfg_path = CONFIG_DIR / "sender_config.json"
             if sender_cfg_path.exists():
                 self._json_response(json.loads(sender_cfg_path.read_text(encoding="utf-8")))
             else:
@@ -232,7 +233,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/sender-config":
             try:
                 data = json.loads(body)
-                sender_cfg_path = OVERLAY_DIR.parent / "sender" / "sender_config.json"
+                sender_cfg_path = CONFIG_DIR / "sender_config.json"
                 sender_cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
                 self._json_response({"ok": True})
             except Exception as e:

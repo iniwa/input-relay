@@ -19,7 +19,7 @@ from pynput import keyboard, mouse
 pygame = None
 
 # Load config
-CONFIG_PATH = Path(__file__).parent / "sender_config.json"
+CONFIG_PATH = Path(__file__).parent.parent / "config" / "sender_config.json"
 GUI_PATH = Path(__file__).parent / "sender_gui.html"
 
 def load_config():

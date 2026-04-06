@@ -45,10 +45,8 @@ CLAUDE_ja.md
 *.db
 
 # ===== ユーザー設定ファイル（各自の環境固有） =====
-sender/sender_config.json
-receiver/config.json
-receiver/presets.json
-receiver/layout_presets.json
+config/*.json
+!config/*.example.json
 
 # ===== OS / エディタ =====
 Thumbs.db

@@ -90,17 +90,19 @@ Sender の接続先を `localhost` に設定するだけで OK。
 ```
 ├── start_sender.bat                  # Main PC 起動用
 ├── start_receiver.bat                # Sub PC 起動用
+├── config/
+│   ├── sender_config.example.json    # Sender 接続設定（テンプレート）
+│   └── config.example.json           # キーマッピング設定（テンプレート）
 ├── sender/
 │   ├── input_sender.py               # 入力キャプチャ + WebSocket 送信
-│   └── sender_config.example.json    # Sender 接続設定（テンプレート）
+│   └── sender_gui.html               # Sender 設定画面
 └── receiver/
     ├── input_server.py               # WebSocket サーバー + HTTP サーバー
     ├── overlay.html                  # OBS 用オーバーレイ
-    ├── config.example.json           # キーマッピング設定（テンプレート）
     └── config_gui.html               # Web 設定画面
 ```
 
-設定ファイル（`sender_config.json`, `config.json` 等）は初回起動時に自動生成されます。
+設定ファイル（`sender_config.json`, `config.json` 等）は `config/` に保存され、初回起動時に自動生成されます。
 手動で作成する場合は `.example.json` をコピーしてリネームしてください。
 
 ## 依存パッケージ
