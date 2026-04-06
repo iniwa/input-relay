@@ -141,6 +141,9 @@ def key_to_str(key):
         return key.char.lower()
     if hasattr(key, "name"):
         return key.name
+    # Fallback: use VK code as identifier (e.g. Japanese IME keys)
+    if vk is not None:
+        return f"vk_{vk}"
     return str(key)
 
 

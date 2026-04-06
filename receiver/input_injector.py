@@ -196,10 +196,11 @@ def replay_event(event):
         if key.startswith("mouse_"):
             inject_mouse_button(key, is_down)
             return
-        # Keyboard: try name map first, fall back to VK code from sender
-        vk = _KEY_TO_VK.get(key)
+        # Keyboard: prefer sender's VK code (actual physical key),
+        # fall back to name map for keys without VK
+        vk = event.get("vk")
         if vk is None:
-            vk = event.get("vk")
+            vk = _KEY_TO_VK.get(key)
         if vk is not None:
             inject_key(vk, key_up=not is_down)
         return
@@ -214,6 +215,11 @@ def release_all(pressed_keys):
             inject_mouse_button(key, is_down=False)
         else:
             vk = _KEY_TO_VK.get(key)
+            if vk is None and key.startswith("vk_"):
+                try:
+                    vk = int(key[3:])
+                except ValueError:
+                    pass
             if vk is not None:
                 inject_key(vk, key_up=True)
     pressed_keys.clear()
