@@ -1,0 +1,61 @@
+{
+  "keyboard": {
+    "displayKeys": [
+      { "key": "w", "label": "W", "row": 1, "col": 2 },
+      { "key": "a", "label": "A", "row": 2, "col": 1 },
+      { "key": "s", "label": "S", "row": 2, "col": 2 },
+      { "key": "d", "label": "D", "row": 2, "col": 3 }
+    ]
+  },
+  "leverless": {
+    "directions": [
+      { "key": "a", "gamepad": "hat_0_left", "label": "\u25c0", "row": 2, "col": 2 },
+      { "key": "s", "gamepad": "hat_0_down", "label": "\u25bc", "row": 2, "col": 3 },
+      { "key": "d", "gamepad": "hat_0_right", "label": "\u25b6", "row": 2, "col": 4 },
+      { "key": "w", "gamepad": "hat_0_up", "label": "\u25b2", "row": 3, "col": 5 }
+    ],
+    "buttons": [
+      { "key": "u", "gamepad": "btn_2", "label": "LP", "row": 1, "col": 7 },
+      { "key": "i", "gamepad": "btn_3", "label": "MP", "row": 1, "col": 8 },
+      { "key": "o", "gamepad": "btn_5", "label": "HP", "row": 1, "col": 9 },
+      { "key": "j", "gamepad": "btn_0", "label": "LK", "row": 2, "col": 7 },
+      { "key": "k", "gamepad": "btn_1", "label": "MK", "row": 2, "col": 8 },
+      { "key": "l", "gamepad": "axis_5_pos", "label": "HK", "row": 2, "col": 9 }
+    ]
+  },
+  "controller": {
+    "leftStick": { "axisX": 0, "axisY": 1 },
+    "rightStick": { "axisX": 2, "axisY": 3 },
+    "deadzone": 0,
+    "directionSource": "leftStick",
+    "buttons": [
+      { "gamepad": "btn_2", "label": "X", "row": 1, "col": 0 },
+      { "gamepad": "btn_0", "label": "A", "row": 2, "col": 1 },
+      { "gamepad": "btn_3", "label": "Y", "row": 0, "col": 1 },
+      { "gamepad": "btn_1", "label": "B", "row": 1, "col": 2 }
+    ],
+    "l2Axis": 4,
+    "r2Axis": 5
+  },
+  "layout": {
+    "keyboard": {
+      "keyDisplay": { "x": 64, "y": 48, "scale": 1 },
+      "history": { "x": 453, "y": 85, "scale": 1 }
+    },
+    "leverless": {
+      "keyDisplay": { "x": 60, "y": 1040, "scale": 1 },
+      "history": { "x": 80, "y": 1147, "scale": 1 }
+    },
+    "controller": {
+      "keyDisplay": { "x": 2048, "y": 784, "scale": 1.5 },
+      "history": { "x": 32, "y": 875, "scale": 1 }
+    }
+  },
+  "inputHistory": {
+    "keyboard": { "maxEntries": 0, "idleTimeoutMs": 3000, "flip": false },
+    "leverless": { "maxEntries": 15, "idleTimeoutMs": 1000, "flip": false },
+    "controller": { "maxEntries": 0, "idleTimeoutMs": 3000, "flip": false }
+  },
+  "displayDelayMs": 70,
+  "afterglowMs": 80
+}

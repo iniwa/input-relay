@@ -37,6 +37,19 @@ tmp/
 *.key
 secrets/
 
+# ===== 個人環境情報（Claude Code 設定） =====
+CLAUDE.md
+CLAUDE_ja.md
+
+# ===== データベース =====
+*.db
+
+# ===== ユーザー設定ファイル（各自の環境固有） =====
+sender/sender_config.json
+receiver/config.json
+receiver/presets.json
+receiver/layout_presets.json
+
 # ===== OS / エディタ =====
 Thumbs.db
 .DS_Store

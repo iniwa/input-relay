@@ -25,7 +25,7 @@ GUI_PATH = Path(__file__).parent / "sender_gui.html"
 def load_config():
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {"host": "192.168.1.100", "port": 8888, "toggleKey": "f12"}
+    return {"host": "localhost", "port": 8888, "toggleKey": "f12"}
 
 def save_config(cfg):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")

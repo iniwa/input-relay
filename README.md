@@ -57,7 +57,7 @@ Sub PC で起動後、以下の URL が利用可能（ポート `8081`）。
 | `http://localhost:8081/input` | キー表示のみ（履歴なし） |
 | `http://localhost:8081/history` | 入力履歴のみ（キー表示なし） |
 
-OBS のブラウザソースや外部からのアクセスに `192.168.1.211` を使用。
+OBS のブラウザソースや外部からのアクセスには Receiver PC の IP アドレスを使用。
 Sub PC 上のブラウザからアクセスする場合は `localhost` に置き換え可能。
 
 ## 1台で動作確認
@@ -67,7 +67,7 @@ Sender の接続先を `localhost` に設定するだけで OK。
 
 ## 設定 GUI
 
-`http://192.168.1.211:8081/` にアクセスすると設定画面が開く。
+`http://<receiver-ip>:8081/` にアクセスすると設定画面が開く。
 
 | タブ | 内容 |
 |------|------|
@@ -88,17 +88,20 @@ Sender の接続先を `localhost` に設定するだけで OK。
 ## ファイル構成
 
 ```
-├── start_sender.bat        # Main PC 起動用
-├── start_receiver.bat      # Sub PC 起動用
+├── start_sender.bat                  # Main PC 起動用
+├── start_receiver.bat                # Sub PC 起動用
 ├── sender/
-│   ├── input_sender.py     # 入力キャプチャ + WebSocket 送信
-│   └── sender_config.json  # Sender 接続設定
+│   ├── input_sender.py               # 入力キャプチャ + WebSocket 送信
+│   └── sender_config.example.json    # Sender 接続設定（テンプレート）
 └── receiver/
-    ├── input_server.py     # WebSocket サーバー + HTTP サーバー
-    ├── overlay.html        # OBS 用オーバーレイ
-    ├── config.json         # キーマッピング設定
-    └── config_gui.html     # Web 設定画面
+    ├── input_server.py               # WebSocket サーバー + HTTP サーバー
+    ├── overlay.html                  # OBS 用オーバーレイ
+    ├── config.example.json           # キーマッピング設定（テンプレート）
+    └── config_gui.html               # Web 設定画面
 ```
+
+設定ファイル（`sender_config.json`, `config.json` 等）は初回起動時に自動生成されます。
+手動で作成する場合は `.example.json` をコピーしてリネームしてください。
 
 ## 依存パッケージ
 
