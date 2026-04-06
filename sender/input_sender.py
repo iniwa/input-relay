@@ -195,10 +195,14 @@ def on_press(key):
     key_str = key_to_str(key)
     vk = _get_vk(key)
     with _pressed_keys_lock:
-        if key_str not in pressed_keys:
+        is_repeat = key_str in pressed_keys
+        if not is_repeat:
             pressed_keys.add(key_str)
-            msg = make_event("key_down", key_str, vk=vk)
-            event_queue.put(msg)
+    # リモートモード中はキーリピートも転送（長押し対応）
+    if not is_repeat or _remote_mode:
+        msg = make_event("key_down", key_str, vk=vk)
+        event_queue.put(msg)
+        if not is_repeat:
             enqueue_monitor(msg)
 
 
