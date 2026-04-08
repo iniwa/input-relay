@@ -9,7 +9,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import urllib.parse
 
@@ -373,7 +373,7 @@ def _restart_server():
 
 def start_http_server(port):
     try:
-        server = HTTPServer(("0.0.0.0", port), OverlayHandler)
+        server = ThreadingHTTPServer(("0.0.0.0", port), OverlayHandler)
     except OSError as e:
         print(f"[HTTP] ERROR: Failed to bind port {port}: {e}")
         print(f"[HTTP] Another process may be using port {port}.")
