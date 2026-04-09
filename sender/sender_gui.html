@@ -208,6 +208,44 @@
   <div id="configStatus" class="status"></div>
 </div>
 
+<!-- Remote Overlay Settings -->
+<div class="section">
+  <h2>リモートオーバーレイ</h2>
+  <p class="hint">リモート操作モード中、画面端に表示される状態オーバーレイの設定</p>
+  <div class="form-group">
+    <label>このPC の表示名</label>
+    <input type="text" id="localName" placeholder="Main-PC">
+  </div>
+  <div class="form-group">
+    <label>操作対象の表示名</label>
+    <input type="text" id="targetName" placeholder="Sub PC">
+  </div>
+  <div class="form-group">
+    <label>オーバーレイ表示</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;min-width:unset;cursor:pointer;">
+      <input type="checkbox" id="overlayEnabled" style="width:16px;height:16px;accent-color:#ffd700;">
+      <span style="font-size:13px;color:#ccc;">有効</span>
+    </label>
+  </div>
+  <div class="form-group">
+    <label>表示位置</label>
+    <select id="overlayPosition" style="background:#2a2a4a;border:1px solid #555;color:#fff;padding:6px 10px;border-radius:4px;font-size:14px;width:200px;">
+      <option value="top-left">左上</option>
+      <option value="top-center">上中央</option>
+      <option value="top-right">右上</option>
+      <option value="middle-left">左中央</option>
+      <option value="middle-right">右中央</option>
+      <option value="bottom-left">左下</option>
+      <option value="bottom-center">下中央</option>
+      <option value="bottom-right">右下</option>
+    </select>
+  </div>
+  <div class="btn-row">
+    <button class="btn-save" onclick="saveOverlayConfig()">オーバーレイ設定を保存</button>
+  </div>
+  <div id="overlayStatus" class="status"></div>
+</div>
+
 <!-- Controller Selection -->
 <div class="section">
   <h2>コントローラ選択</h2>
@@ -283,6 +321,14 @@ async function loadConfig() {
     const cfg = await res.json();
     document.getElementById('host').value = cfg.host || '';
     document.getElementById('port').value = cfg.port || 8765;
+    document.getElementById('localName').value = cfg.local_name || '';
+    document.getElementById('targetName').value = cfg.target_name || '';
+    const overlay = cfg.remote_overlay || {};
+    document.getElementById('overlayEnabled').checked = overlay.enabled !== false;
+    const pos = overlay.position || 'top-left';
+    const posSel = document.getElementById('overlayPosition');
+    posSel.value = pos;
+    if (posSel.value !== pos) posSel.value = 'top-left';
   } catch (e) {
     console.error('Failed to load config:', e);
   }
@@ -301,6 +347,31 @@ async function saveConfig() {
     const data = await res.json();
     statusEl.className = 'status ok';
     statusEl.textContent = '保存しました。再接続中...';
+    setTimeout(() => { statusEl.className = 'status'; }, 3000);
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '保存に失敗しました: ' + e.message;
+  }
+}
+
+async function saveOverlayConfig() {
+  const local_name = document.getElementById('localName').value.trim();
+  const target_name = document.getElementById('targetName').value.trim();
+  const enabled = document.getElementById('overlayEnabled').checked;
+  const position = document.getElementById('overlayPosition').value;
+  const statusEl = document.getElementById('overlayStatus');
+  try {
+    await fetch(API + '/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        local_name,
+        target_name,
+        remote_overlay: { enabled, position }
+      })
+    });
+    statusEl.className = 'status ok';
+    statusEl.textContent = '保存しました。次回のリモート操作開始時から反映されます。';
     setTimeout(() => { statusEl.className = 'status'; }, 3000);
   } catch (e) {
     statusEl.className = 'status err';

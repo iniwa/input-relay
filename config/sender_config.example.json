@@ -1,4 +1,10 @@
 {
   "host": "localhost",
-  "port": 8888
+  "port": 8888,
+  "local_name": "",
+  "target_name": "Sub PC",
+  "remote_overlay": {
+    "enabled": true,
+    "position": "top-left"
+  }
 }

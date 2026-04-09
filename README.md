@@ -107,6 +107,38 @@ python receiver/input_server.py --http-port 8081 --standalone
 Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモードを切り替え可能。
 設定 GUI からもトグルできる。
 
+リモートモード中は Main PC の画面端に「`target_name` を操作中」という半透明オーバーレイが
+表示され、ゲームウィンドウからフォーカスを奪うことでキーボード・マウス操作がゲームに
+届かないようにする。解除するとオーバーレイが破棄され、Z オーダーで元のウィンドウが
+自動的に前面へ戻る。
+
+### 既知の制限
+
+**Raw Input をバックグラウンドでも受け取るゲーム**（例: Escape from Tarkov のレイド中など、
+`RIDEV_INPUTSINK` 相当を使うタイトル）では、Windows のアーキテクチャ上、マウス移動を
+完全に遮断することができない。この種のゲームではリモートモードに入る前に一時停止するか
+メニューを開くこと。
+
+一方、HoYoverse 系（Zenless Zone Zero、アークナイツ エンドフィールド等）や Overwatch 2 など、
+フォーカス喪失時に入力処理を停止するゲームでは期待通り動作する。
+
+また、排他フルスクリーンのゲームは topmost ウィンドウとの相性が悪いので、ボーダーレス
+ウィンドウモードでの運用を推奨する。
+
+### 設定項目（`sender_config.json`）
+
+| キー | 説明 | 既定値 |
+|------|------|--------|
+| `local_name` | このPC の表示名（オーバーレイ補足用） | `""` |
+| `target_name` | 操作対象 PC の表示名（オーバーレイ本文用） | `"Sub PC"` |
+| `remote_overlay.enabled` | オーバーレイ表示の有効化 | `true` |
+| `remote_overlay.position` | オーバーレイ位置（8 方向） | `"top-left"` |
+
+`position` に指定可能な値:
+`top-left` / `top-center` / `top-right` /
+`middle-left` / `middle-right` /
+`bottom-left` / `bottom-center` / `bottom-right`
+
 ## ファイル構成
 
 ```

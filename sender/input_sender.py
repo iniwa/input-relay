@@ -6,6 +6,7 @@ Run on Main PC. Includes local HTTP server for configuration GUI.
 import asyncio
 import json
 import os
+import queue
 import sys
 import time
 import threading
@@ -22,10 +23,34 @@ pygame = None
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "sender_config.json"
 GUI_PATH = Path(__file__).parent / "sender_gui.html"
 
+_CONFIG_DEFAULTS = {
+    "host": "localhost",
+    "port": 8888,
+    "toggleKey": "f12",
+    "local_name": "",
+    "target_name": "Sub PC",
+    "remote_overlay": {
+        "enabled": True,
+        "position": "top-left",
+    },
+}
+
+
+def _merge_defaults(loaded, defaults):
+    """Recursively fill missing keys in loaded dict with defaults."""
+    for k, v in defaults.items():
+        if k not in loaded:
+            loaded[k] = v
+        elif isinstance(v, dict) and isinstance(loaded.get(k), dict):
+            _merge_defaults(loaded[k], v)
+    return loaded
+
+
 def load_config():
     if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {"host": "localhost", "port": 8888, "toggleKey": "f12"}
+        loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return _merge_defaults(loaded, _CONFIG_DEFAULTS)
+    return json.loads(json.dumps(_CONFIG_DEFAULTS))  # deep copy
 
 def save_config(cfg):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -45,6 +70,13 @@ _remote_lock = threading.Lock()
 _remote_toggle_event = None  # asyncio.Event, signals listener restart
 _kb_listener = None
 _mouse_listener = None
+
+# Remote overlay window (tkinter on its own thread)
+_overlay_thread = None
+_overlay_root = None      # tk.Tk, lives on _overlay_thread
+_overlay_window = None    # tk.Toplevel, the visible overlay
+_overlay_ready = threading.Event()
+_overlay_cmd_queue = queue.Queue()  # "show" / "hide"
 
 # Controller selection state
 selected_controller_id = 0
@@ -86,6 +118,196 @@ def _unfreeze_cursor():
     ctypes.windll.user32.ClipCursor(None)
 
 
+# --- Remote overlay window ---
+# 画面端に「{target_name} を操作中」を半透明表示し、フォーカスを奪うことで
+# フォアグラウンドのゲームに入力が届かないようにする。
+# tkinter は単一スレッド前提なので専用スレッドで mainloop を回し、
+# 他スレッドからは queue 経由で show/hide 指示を送る。
+
+_OVERLAY_POSITIONS = (
+    "top-left", "top-center", "top-right",
+    "middle-left", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right",
+)
+
+
+def _calc_overlay_position(position, width, height, screen_w, screen_h):
+    """8 方向指定から画面上の (x, y) を算出。"""
+    margin = 20
+    if position not in _OVERLAY_POSITIONS:
+        position = "top-left"
+    if "left" in position:
+        x = margin
+    elif "right" in position:
+        x = screen_w - width - margin
+    else:
+        x = (screen_w - width) // 2
+    if "top" in position:
+        y = margin
+    elif "bottom" in position:
+        y = screen_h - height - margin
+    else:
+        y = (screen_h - height) // 2
+    return x, y
+
+
+def _overlay_poll_queue():
+    """GUI スレッドから定期的に指示キューを確認する。"""
+    try:
+        while True:
+            cmd = _overlay_cmd_queue.get_nowait()
+            if cmd == "show":
+                _do_show_overlay()
+            elif cmd == "hide":
+                _do_hide_overlay()
+    except queue.Empty:
+        pass
+    if _overlay_root is not None:
+        _overlay_root.after(30, _overlay_poll_queue)
+
+
+def _overlay_thread_main():
+    """Dedicated thread: creates hidden Tk root and runs mainloop."""
+    global _overlay_root
+    try:
+        import tkinter as tk
+    except ImportError:
+        print("[Overlay] tkinter not available; overlay disabled")
+        _overlay_ready.set()
+        return
+    try:
+        _overlay_root = tk.Tk()
+        _overlay_root.withdraw()
+    except Exception as e:
+        print(f"[Overlay] Failed to create Tk root: {e}")
+        _overlay_ready.set()
+        return
+    _overlay_ready.set()
+    _overlay_root.after(30, _overlay_poll_queue)
+    try:
+        _overlay_root.mainloop()
+    except Exception as e:
+        print(f"[Overlay] mainloop exited: {e}")
+
+
+def _ensure_overlay_thread():
+    """Lazy-start the overlay GUI thread."""
+    global _overlay_thread
+    if _overlay_thread is not None and _overlay_thread.is_alive():
+        return
+    _overlay_ready.clear()
+    _overlay_thread = threading.Thread(
+        target=_overlay_thread_main, daemon=True, name="overlay-gui",
+    )
+    _overlay_thread.start()
+    _overlay_ready.wait(timeout=3.0)
+
+
+def _do_show_overlay():
+    """GUI スレッドから呼ばれる: 実際にオーバーレイを作成・表示する。"""
+    global _overlay_window
+    if _overlay_window is not None:
+        return
+    if _overlay_root is None:
+        return
+    import tkinter as tk
+
+    overlay_cfg = config.get("remote_overlay") or {}
+    position = overlay_cfg.get("position", "top-left")
+    target = (config.get("target_name") or "Sub PC").strip() or "Sub PC"
+    local = (config.get("local_name") or "").strip()
+
+    w = tk.Toplevel(_overlay_root)
+    w.overrideredirect(True)
+    w.attributes("-topmost", True)
+    w.attributes("-alpha", 0.88)
+    w.configure(bg="#1a1a1a")
+
+    # Left accent bar
+    accent = tk.Frame(w, width=5, bg="#4A9EFF")
+    accent.pack(side="left", fill="y")
+
+    # Content
+    content = tk.Frame(w, bg="#1a1a1a", padx=14, pady=10)
+    content.pack(side="left", fill="both", expand=True)
+
+    main_label = tk.Label(
+        content,
+        text=f"▶ {target} を操作中",
+        fg="#ffffff",
+        bg="#1a1a1a",
+        font=("Yu Gothic UI", 13, "bold"),
+        anchor="w",
+    )
+    main_label.pack(anchor="w")
+
+    if local:
+        sub_text = f"↑ {local} の入力を転送中  /  Scroll Lock で解除"
+    else:
+        sub_text = "Scroll Lock で解除"
+    sub_label = tk.Label(
+        content,
+        text=sub_text,
+        fg="#bbbbbb",
+        bg="#1a1a1a",
+        font=("Yu Gothic UI", 9),
+        anchor="w",
+    )
+    sub_label.pack(anchor="w")
+
+    # Determine required size then place on screen
+    w.update_idletasks()
+    width = max(280, w.winfo_reqwidth())
+    height = w.winfo_reqheight()
+    screen_w = w.winfo_screenwidth()
+    screen_h = w.winfo_screenheight()
+    x, y = _calc_overlay_position(position, width, height, screen_w, screen_h)
+    w.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Take focus. On Windows, overrideredirect windows can be uncooperative;
+    # combine tkinter focus + Win32 SetForegroundWindow via winfo_id (HWND).
+    w.lift()
+    w.focus_force()
+    try:
+        import ctypes
+        hwnd = w.winfo_id()
+        ctypes.windll.user32.BringWindowToTop(hwnd)
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+    _overlay_window = w
+
+
+def _do_hide_overlay():
+    """GUI スレッドから呼ばれる: オーバーレイを破棄。Z オーダーで元のウィンドウが戻る。"""
+    global _overlay_window
+    if _overlay_window is not None:
+        try:
+            _overlay_window.destroy()
+        except Exception:
+            pass
+        _overlay_window = None
+
+
+def _show_remote_overlay():
+    """他スレッドから安全に呼べる: オーバーレイ表示を GUI スレッドに依頼。"""
+    overlay_cfg = config.get("remote_overlay") or {}
+    if not overlay_cfg.get("enabled", True):
+        return
+    _ensure_overlay_thread()
+    if _overlay_root is None:
+        return
+    _overlay_cmd_queue.put("show")
+
+
+def _hide_remote_overlay():
+    """他スレッドから安全に呼べる: オーバーレイ破棄を GUI スレッドに依頼。"""
+    if _overlay_thread is None or _overlay_root is None:
+        return
+    _overlay_cmd_queue.put("hide")
+
+
 def _set_remote_mode(enabled):
     """Toggle remote control mode. Signals listener restart."""
     global _remote_mode
@@ -98,7 +320,9 @@ def _set_remote_mode(enabled):
     print(f"[Remote] {state}")
     if enabled:
         _freeze_cursor()
+        _show_remote_overlay()
     else:
+        _hide_remote_overlay()
         _unfreeze_cursor()
     # Signal asyncio thread to restart listeners and notify receiver
     if _loop is not None and _remote_toggle_event is not None:
@@ -669,11 +893,30 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
     def _handle_save_config(self):
         global config
         data = self._read_body()
-        config["host"] = data.get("host", config.get("host"))
-        config["port"] = int(data.get("port", config.get("port", 8888)))
+        prev_host = config.get("host")
+        prev_port = config.get("port")
+        config["host"] = data.get("host", prev_host)
+        config["port"] = int(data.get("port", prev_port or 8888))
+        # Remote overlay 関連項目の更新
+        if "local_name" in data:
+            config["local_name"] = str(data.get("local_name") or "")
+        if "target_name" in data:
+            config["target_name"] = str(data.get("target_name") or "")
+        if "remote_overlay" in data and isinstance(data["remote_overlay"], dict):
+            overlay = config.get("remote_overlay") or {}
+            if not isinstance(overlay, dict):
+                overlay = {}
+            incoming = data["remote_overlay"]
+            if "enabled" in incoming:
+                overlay["enabled"] = bool(incoming["enabled"])
+            if "position" in incoming:
+                pos = str(incoming["position"])
+                if pos in _OVERLAY_POSITIONS:
+                    overlay["position"] = pos
+            config["remote_overlay"] = overlay
         save_config(config)
-        # Signal reconnect
-        if _loop is not None:
+        # host/port が変化したときだけ再接続をトリガ
+        if (config["host"] != prev_host or config["port"] != prev_port) and _loop is not None:
             _loop.call_soon_threadsafe(_trigger_reconnect)
         self._send_json({"ok": True})
 
