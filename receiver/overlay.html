@@ -120,7 +120,11 @@
   }
   .dpad-btn.active {
     background: rgba(100,180,255,0.85);
-    border-color: #64b4ff; color: #000;
+    border-color: #64b4ff;
+  }
+  .dpad-btn.afterglow {
+    background: rgba(100,180,255,0.2);
+    border-color: rgba(100,180,255,0.35);
   }
 
   .ctrl-buttons { display: grid; gap: 4px; }
@@ -872,7 +876,7 @@ function initMouseTrail() {
 
 function handleMouseMove(data) {
   const mt = config?.mouseTrail || {};
-  const sens = mt.sensitivity || 1.0;
+  const sens = mt.sensitivity ?? 1.0;
   const dx = data.dx * sens;
   const dy = data.dy * sens;
   const now = performance.now();
