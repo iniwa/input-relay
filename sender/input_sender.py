@@ -77,6 +77,7 @@ _overlay_root = None      # tk.Tk, lives on _overlay_thread
 _overlay_window = None    # tk.Toplevel, the visible overlay
 _overlay_ready = threading.Event()
 _overlay_cmd_queue = queue.Queue()  # "show" / "hide"
+_overlay_user_hidden = False  # Pause キーで一時的に非表示にされたか
 
 # Controller selection state
 selected_controller_id = 0
@@ -295,6 +296,8 @@ def _show_remote_overlay():
     overlay_cfg = config.get("remote_overlay") or {}
     if not overlay_cfg.get("enabled", True):
         return
+    if _overlay_user_hidden:
+        return
     _ensure_overlay_thread()
     if _overlay_root is None:
         return
@@ -310,7 +313,7 @@ def _hide_remote_overlay():
 
 def _set_remote_mode(enabled):
     """Toggle remote control mode. Signals listener restart."""
-    global _remote_mode
+    global _remote_mode, _overlay_user_hidden
     with _remote_lock:
         was = _remote_mode
         _remote_mode = enabled
@@ -319,6 +322,7 @@ def _set_remote_mode(enabled):
     state = "ENABLED" if enabled else "DISABLED"
     print(f"[Remote] {state}")
     if enabled:
+        _overlay_user_hidden = False
         _freeze_cursor()
         _show_remote_overlay()
     else:
@@ -409,12 +413,25 @@ def _get_vk(key):
 
 
 def on_press(key):
+    global _overlay_user_hidden
     # Scroll Lock toggles remote control mode
     if key == keyboard.Key.scroll_lock:
         with _remote_lock:
             new_state = not _remote_mode
         _set_remote_mode(new_state)
         return  # Don't send Scroll Lock to receiver
+
+    # Pause はリモート中にオーバーレイの表示/非表示を切り替える
+    if key == keyboard.Key.pause:
+        with _remote_lock:
+            in_remote = _remote_mode
+        if in_remote:
+            _overlay_user_hidden = not _overlay_user_hidden
+            if _overlay_user_hidden:
+                _hide_remote_overlay()
+            else:
+                _show_remote_overlay()
+            return  # Don't send Pause to receiver
 
     key_str = key_to_str(key)
     vk = _get_vk(key)
