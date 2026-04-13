@@ -230,6 +230,8 @@ let config = null;
 let mode = 'keyboard';
 let pressedKeys = new Set();
 let keyElements = {};
+let displayDelayTimers = [];
+let ws = null;
 
 let historyEntries = [];  // { text, el, fadeTimer, removeTimer }
 
@@ -347,9 +349,19 @@ function getDirArrow(numpad) {
 }
 
 // --- Label rendering with \n support ---
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setLabelContent(el, label) {
   if (label && label.includes('\\n')) {
-    el.innerHTML = label.replace(/\\n/g, '<br>');
+    el.innerHTML = escapeHtml(label).replace(/\\n/g, '<br>');
   } else {
     el.textContent = label;
   }
@@ -658,6 +670,8 @@ function histCfg() {
 
 function buildLayout() {
   if (!config) return;
+  displayDelayTimers.forEach(clearTimeout);
+  displayDelayTimers = [];
   if (mode === 'controller') {
     buildController(config);
   } else if (mode === 'leverless') {
@@ -969,9 +983,21 @@ function applyMouseTrailLayout() {
 
 // --- WebSocket ---
 function connect() {
-  const ws = new WebSocket(WS_URL);
+  if (ws) {
+    try { ws.close(); } catch (e) {}
+    ws = null;
+  }
+  if (trailAnimId) {
+    cancelAnimationFrame(trailAnimId);
+    trailAnimId = null;
+  }
+  displayDelayTimers.forEach(clearTimeout);
+  displayDelayTimers = [];
+  ws = new WebSocket(WS_URL);
   ws.onopen = () => {
     console.log('Connected to server');
+    displayDelayTimers.forEach(clearTimeout);
+    displayDelayTimers = [];
     fetch('/api/config').then(r => r.json()).then(data => {
       config = data;
       buildLayout();
@@ -1003,8 +1029,15 @@ function connect() {
         if (data.type === 'axis_update') handleAxisUpdate(data);
         else handleInput(data);
       };
-      if (delay > 0) setTimeout(process, delay);
-      else process();
+      if (delay > 0) {
+        const id = setTimeout(() => {
+          displayDelayTimers = displayDelayTimers.filter(t => t !== id);
+          process();
+        }, delay);
+        displayDelayTimers.push(id);
+      } else {
+        process();
+      }
     }
   };
 }

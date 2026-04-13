@@ -22,6 +22,7 @@ _browser_lock = asyncio.Lock()
 sender_ws = None
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
+_http_server = None  # ThreadingHTTPServer instance, for shutdown
 
 # Standalone mode
 _standalone = False
@@ -38,53 +39,77 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 PRESETS_PATH = CONFIG_DIR / "presets.json"
 LAYOUT_PRESETS_PATH = CONFIG_DIR / "layout_presets.json"
 
+# LAN 公開前提のため、複数クライアントからの同時 POST/DELETE を直列化。
+# どの path も同じロックで保護 (頻度が低いので単一ロックで十分)。
+_config_io_lock = threading.Lock()
+
 
 def load_config():
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {}
+    with _config_io_lock:
+        if CONFIG_PATH.exists():
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return {}
 
 
 def save_config(data):
-    CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _config_io_lock:
+        CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 _PRESET_TYPES = {"keyboard", "leverless", "controller"}
 
 def load_presets():
-    empty = {"keyboard": {}, "leverless": {}, "controller": {}}
-    if not PRESETS_PATH.exists():
-        return empty
-    data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
-    # Migrate old flat format: { "name": { keyboard, leverless, controller } }
-    if data and not all(k in _PRESET_TYPES for k in data.keys()):
-        migrated = {"keyboard": {}, "leverless": {}, "controller": {}}
-        for name, p in data.items():
-            for t in _PRESET_TYPES:
-                if t in p:
-                    migrated[t][name] = {t: p[t]}
-        save_presets(migrated)
-        return migrated
-    return data
+    with _config_io_lock:
+        empty = {"keyboard": {}, "leverless": {}, "controller": {}}
+        if not PRESETS_PATH.exists():
+            return empty
+        data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        # Migrate old flat format: { "name": { keyboard, leverless, controller } }
+        if data and not all(k in _PRESET_TYPES for k in data.keys()):
+            migrated = {"keyboard": {}, "leverless": {}, "controller": {}}
+            for name, p in data.items():
+                for t in _PRESET_TYPES:
+                    if t in p:
+                        migrated[t][name] = {t: p[t]}
+            PRESETS_PATH.write_text(
+                json.dumps(migrated, indent=2, ensure_ascii=False), encoding="utf-8",
+            )
+            return migrated
+        return data
 
 
 def save_presets(data):
-    PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _config_io_lock:
+        PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def load_layout_presets():
-    empty = {"keyboard": {}, "leverless": {}, "controller": {}}
-    if not LAYOUT_PRESETS_PATH.exists():
-        return empty
-    data = json.loads(LAYOUT_PRESETS_PATH.read_text(encoding="utf-8"))
-    for t in _PRESET_TYPES:
-        if t not in data:
-            data[t] = {}
-    return data
+    with _config_io_lock:
+        empty = {"keyboard": {}, "leverless": {}, "controller": {}}
+        if not LAYOUT_PRESETS_PATH.exists():
+            return empty
+        data = json.loads(LAYOUT_PRESETS_PATH.read_text(encoding="utf-8"))
+        for t in _PRESET_TYPES:
+            if t not in data:
+                data[t] = {}
+        return data
 
 
 def save_layout_presets(data):
-    LAYOUT_PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _config_io_lock:
+        LAYOUT_PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _client_label(handler):
+    """Return a short string identifying the HTTP client for logs."""
+    try:
+        ip = handler.client_address[0]
+    except Exception:
+        ip = "?"
+    origin = handler.headers.get("Origin", "")
+    ua = handler.headers.get("User-Agent", "")
+    tag = origin or ua[:40]
+    return f"{ip} ({tag})" if tag else ip
 
 
 async def broadcast_to_browsers(message):
@@ -95,6 +120,26 @@ async def broadcast_to_browsers(message):
             *[c.send(message) for c in clients],
             return_exceptions=True,
         )
+
+
+def _broadcast_change(kind, extra):
+    """Push a config-change notification to all browsers via WebSocket.
+    kind: 'config', 'sender_config', 'presets', 'layout_presets'
+    """
+    if _ws_loop is None:
+        return
+    payload = {"type": "config_change", "kind": kind, "timestamp": time.time()}
+    payload.update(extra)
+    # Legacy compatibility: send 'config' type too so existing overlay.html
+    # listeners continue to refresh on config updates.
+    if kind == "config" and "data" in extra:
+        asyncio.run_coroutine_threadsafe(
+            broadcast_to_browsers(json.dumps({"type": "config", "data": extra["data"]})),
+            _ws_loop,
+        )
+    asyncio.run_coroutine_threadsafe(
+        broadcast_to_browsers(json.dumps(payload)), _ws_loop,
+    )
 
 
 async def _send_to_sender(data):
@@ -154,10 +199,11 @@ class OverlayHandler(BaseHTTPRequestHandler):
         if path == "api/sender-config":
             # Read sender config from sender dir (if accessible)
             sender_cfg_path = CONFIG_DIR / "sender_config.json"
-            if sender_cfg_path.exists():
-                self._json_response(json.loads(sender_cfg_path.read_text(encoding="utf-8")))
-            else:
-                self._json_response({})
+            with _config_io_lock:
+                if sender_cfg_path.exists():
+                    self._json_response(json.loads(sender_cfg_path.read_text(encoding="utf-8")))
+                else:
+                    self._json_response({})
             return
 
         # Serve static files
@@ -190,15 +236,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 save_config(data)
-                msg = json.dumps({"type": "config", "data": data})
-                if _ws_loop:
-                    future = asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
-                    try:
-                        future.result(timeout=2)
-                    except Exception as e:
-                        print(f"[WS] Broadcast failed: {e}")
-                else:
-                    print("[WS] Warning: _ws_loop is None, broadcast skipped")
+                print(f"[API] config updated by {_client_label(self)}")
+                _broadcast_change("config", {"data": data})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -214,6 +253,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
                     presets[ptype] = {}
                 presets[ptype][name] = {ptype: data[ptype], "layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
                 save_presets(presets)
+                print(f"[API] preset saved: {ptype}/{name} by {_client_label(self)}")
+                _broadcast_change("presets", {"type": ptype, "name": name, "op": "save"})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -229,6 +270,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
                     presets[ptype] = {}
                 presets[ptype][name] = {"layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
                 save_layout_presets(presets)
+                print(f"[API] layout-preset saved: {ptype}/{name} by {_client_label(self)}")
+                _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "save"})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -238,7 +281,13 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 sender_cfg_path = CONFIG_DIR / "sender_config.json"
-                sender_cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                with _config_io_lock:
+                    sender_cfg_path.write_text(
+                        json.dumps(data, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                print(f"[API] sender-config updated by {_client_label(self)}")
+                _broadcast_change("sender_config", {"data": data})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -247,13 +296,7 @@ class OverlayHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/refresh":
             try:
                 data = load_config()
-                msg = json.dumps({"type": "config", "data": data})
-                if _ws_loop:
-                    future = asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
-                    try:
-                        future.result(timeout=2)
-                    except Exception as e:
-                        print(f"[WS] Refresh broadcast failed: {e}")
+                _broadcast_change("config", {"data": data})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -306,9 +349,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 ptype = data.get("type", "keyboard")
+                name = data["name"]
                 presets = load_presets()
-                presets.get(ptype, {}).pop(data["name"], None)
+                presets.get(ptype, {}).pop(name, None)
                 save_presets(presets)
+                print(f"[API] preset deleted: {ptype}/{name} by {_client_label(self)}")
+                _broadcast_change("presets", {"type": ptype, "name": name, "op": "delete"})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -318,9 +364,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 ptype = data.get("type", "keyboard")
+                name = data["name"]
                 presets = load_layout_presets()
-                presets.get(ptype, {}).pop(data["name"], None)
+                presets.get(ptype, {}).pop(name, None)
                 save_layout_presets(presets)
+                print(f"[API] layout-preset deleted: {ptype}/{name} by {_client_label(self)}")
+                _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "delete"})
                 self._json_response({"ok": True})
             except Exception as e:
                 self._json_response({"error": str(e)}, 400)
@@ -372,8 +421,9 @@ def _restart_server():
 
 
 def start_http_server(port):
+    global _http_server
     try:
-        server = ThreadingHTTPServer(("0.0.0.0", port), OverlayHandler)
+        _http_server = ThreadingHTTPServer(("0.0.0.0", port), OverlayHandler)
     except OSError as e:
         print(f"[HTTP] ERROR: Failed to bind port {port}: {e}")
         print(f"[HTTP] Another process may be using port {port}.")
@@ -381,7 +431,27 @@ def start_http_server(port):
         return
     print(f"[HTTP] Config GUI: http://localhost:{port}/")
     print(f"[HTTP] Overlay:    http://localhost:{port}/overlay.html")
-    server.serve_forever()
+    try:
+        _http_server.serve_forever()
+    finally:
+        # shutdown() 経由で抜けてきた場合もここで後始末する
+        try:
+            _http_server.server_close()
+        except Exception:
+            pass
+
+
+def shutdown_http_server():
+    """Gracefully stop the HTTP server. Safe to call from any thread."""
+    global _http_server
+    srv = _http_server
+    _http_server = None
+    if srv is None:
+        return
+    try:
+        srv.shutdown()
+    except Exception:
+        pass
 
 
 async def browser_handler(ws):
@@ -516,4 +586,13 @@ if __name__ == "__main__":
     try:
         asyncio.run(main(args.port, args.http_port, args.standalone))
     except KeyboardInterrupt:
-        print("\n[Server] Stopped.")
+        print("\n[Server] Stopping...")
+    finally:
+        shutdown_http_server()
+        if args.standalone:
+            try:
+                import standalone_capture
+                standalone_capture.stop()
+            except Exception:
+                pass
+        print("[Server] Stopped.")

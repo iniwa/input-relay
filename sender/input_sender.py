@@ -6,7 +6,6 @@ Run on Main PC. Includes local HTTP server for configuration GUI.
 import asyncio
 import json
 import os
-import queue
 import sys
 import time
 import threading
@@ -16,6 +15,9 @@ from urllib.parse import urlparse
 
 import websockets
 from pynput import keyboard, mouse
+
+import overlay_window
+import raw_mouse
 
 pygame = None
 
@@ -71,13 +73,9 @@ _remote_toggle_event = None  # asyncio.Event, signals listener restart
 _kb_listener = None
 _mouse_listener = None
 
-# Remote overlay window (tkinter on its own thread)
-_overlay_thread = None
-_overlay_root = None      # tk.Tk, lives on _overlay_thread
-_overlay_window = None    # tk.Toplevel, the visible overlay
-_overlay_ready = threading.Event()
-_overlay_cmd_queue = queue.Queue()  # "show" / "hide"
-_overlay_user_hidden = False  # Pause キーで一時的に非表示にされたか
+# Remote overlay window — tkinter を別スレッドで管理するマネージャー
+_overlay_manager = overlay_window.OverlayManager(lambda: config)
+_OVERLAY_POSITIONS = overlay_window.valid_positions()
 
 # Controller selection state
 selected_controller_id = 0
@@ -119,214 +117,21 @@ def _unfreeze_cursor():
     ctypes.windll.user32.ClipCursor(None)
 
 
-# --- Remote overlay window ---
-# 画面端に「{target_name} を操作中」を半透明表示し、フォーカスを奪うことで
-# フォアグラウンドのゲームに入力が届かないようにする。
-# tkinter は単一スレッド前提なので専用スレッドで mainloop を回し、
-# 他スレッドからは queue 経由で show/hide 指示を送る。
-
-_OVERLAY_POSITIONS = (
-    "top-left", "top-center", "top-right",
-    "middle-left", "middle-right",
-    "bottom-left", "bottom-center", "bottom-right",
-)
-
-
-def _calc_overlay_position(position, width, height, screen_w, screen_h):
-    """8 方向指定から画面上の (x, y) を算出。"""
-    margin = 20
-    if position not in _OVERLAY_POSITIONS:
-        position = "top-left"
-    if "left" in position:
-        x = margin
-    elif "right" in position:
-        x = screen_w - width - margin
-    else:
-        x = (screen_w - width) // 2
-    if "top" in position:
-        y = margin
-    elif "bottom" in position:
-        y = screen_h - height - margin
-    else:
-        y = (screen_h - height) // 2
-    return x, y
-
-
-def _overlay_poll_queue():
-    """GUI スレッドから定期的に指示キューを確認する。"""
-    try:
-        while True:
-            cmd = _overlay_cmd_queue.get_nowait()
-            if cmd == "show":
-                _do_show_overlay()
-            elif cmd == "hide":
-                _do_hide_overlay()
-    except queue.Empty:
-        pass
-    if _overlay_root is not None:
-        _overlay_root.after(30, _overlay_poll_queue)
-
-
-def _overlay_thread_main():
-    """Dedicated thread: creates hidden Tk root and runs mainloop."""
-    global _overlay_root
-    try:
-        import tkinter as tk
-    except ImportError:
-        print("[Overlay] tkinter not available; overlay disabled")
-        _overlay_ready.set()
-        return
-    try:
-        _overlay_root = tk.Tk()
-        _overlay_root.withdraw()
-    except Exception as e:
-        print(f"[Overlay] Failed to create Tk root: {e}")
-        _overlay_ready.set()
-        return
-    _overlay_ready.set()
-    _overlay_root.after(30, _overlay_poll_queue)
-    try:
-        _overlay_root.mainloop()
-    except Exception as e:
-        print(f"[Overlay] mainloop exited: {e}")
-
-
-def _ensure_overlay_thread():
-    """Lazy-start the overlay GUI thread."""
-    global _overlay_thread
-    if _overlay_thread is not None and _overlay_thread.is_alive():
-        return
-    _overlay_ready.clear()
-    _overlay_thread = threading.Thread(
-        target=_overlay_thread_main, daemon=True, name="overlay-gui",
-    )
-    _overlay_thread.start()
-    _overlay_ready.wait(timeout=3.0)
-
-
-def _do_show_overlay():
-    """GUI スレッドから呼ばれる: 実際にオーバーレイを作成・表示する。"""
-    global _overlay_window
-    if _overlay_window is not None:
-        return
-    if _overlay_root is None:
-        return
-    import tkinter as tk
-
-    overlay_cfg = config.get("remote_overlay") or {}
-    position = overlay_cfg.get("position", "top-left")
-    target = (config.get("target_name") or "Sub PC").strip() or "Sub PC"
-    local = (config.get("local_name") or "").strip()
-
-    w = tk.Toplevel(_overlay_root)
-    w.overrideredirect(True)
-    w.attributes("-topmost", True)
-    w.attributes("-alpha", 0.88)
-    w.configure(bg="#1a1a1a")
-
-    # Left accent bar
-    accent = tk.Frame(w, width=5, bg="#4A9EFF")
-    accent.pack(side="left", fill="y")
-
-    # Content
-    content = tk.Frame(w, bg="#1a1a1a", padx=14, pady=10)
-    content.pack(side="left", fill="both", expand=True)
-
-    main_label = tk.Label(
-        content,
-        text=f"▶ {target} を操作中",
-        fg="#ffffff",
-        bg="#1a1a1a",
-        font=("Yu Gothic UI", 13, "bold"),
-        anchor="w",
-    )
-    main_label.pack(anchor="w")
-
-    if local:
-        sub_text = f"↑ {local} の入力を転送中  /  Scroll Lock で解除"
-    else:
-        sub_text = "Scroll Lock で解除"
-    sub_label = tk.Label(
-        content,
-        text=sub_text,
-        fg="#bbbbbb",
-        bg="#1a1a1a",
-        font=("Yu Gothic UI", 9),
-        anchor="w",
-    )
-    sub_label.pack(anchor="w")
-
-    # Determine required size then place on screen
-    w.update_idletasks()
-    width = max(280, w.winfo_reqwidth())
-    height = w.winfo_reqheight()
-    screen_w = w.winfo_screenwidth()
-    screen_h = w.winfo_screenheight()
-    x, y = _calc_overlay_position(position, width, height, screen_w, screen_h)
-    w.geometry(f"{width}x{height}+{x}+{y}")
-
-    # Take focus. On Windows, overrideredirect windows can be uncooperative;
-    # combine tkinter focus + Win32 SetForegroundWindow via winfo_id (HWND).
-    w.lift()
-    w.focus_force()
-    try:
-        import ctypes
-        hwnd = w.winfo_id()
-        ctypes.windll.user32.BringWindowToTop(hwnd)
-        ctypes.windll.user32.SetForegroundWindow(hwnd)
-    except Exception:
-        pass
-
-    _overlay_window = w
-
-
-def _do_hide_overlay():
-    """GUI スレッドから呼ばれる: オーバーレイを破棄。Z オーダーで元のウィンドウが戻る。"""
-    global _overlay_window
-    if _overlay_window is not None:
-        try:
-            _overlay_window.destroy()
-        except Exception:
-            pass
-        _overlay_window = None
-
-
-def _show_remote_overlay():
-    """他スレッドから安全に呼べる: オーバーレイ表示を GUI スレッドに依頼。"""
-    overlay_cfg = config.get("remote_overlay") or {}
-    if not overlay_cfg.get("enabled", True):
-        return
-    if _overlay_user_hidden:
-        return
-    _ensure_overlay_thread()
-    if _overlay_root is None:
-        return
-    _overlay_cmd_queue.put("show")
-
-
-def _hide_remote_overlay():
-    """他スレッドから安全に呼べる: オーバーレイ破棄を GUI スレッドに依頼。"""
-    if _overlay_thread is None or _overlay_root is None:
-        return
-    _overlay_cmd_queue.put("hide")
-
-
 def _set_remote_mode(enabled):
     """Toggle remote control mode. Signals listener restart."""
-    global _remote_mode, _overlay_user_hidden
+    global _remote_mode
     with _remote_lock:
         was = _remote_mode
         _remote_mode = enabled
     if was == enabled:
         return
-    state = "ENABLED" if enabled else "DISABLED"
-    print(f"[Remote] {state}")
+    print(f"[Remote] {'ENABLED' if enabled else 'DISABLED'}")
     if enabled:
-        _overlay_user_hidden = False
+        _overlay_manager.set_user_hidden(False)
         _freeze_cursor()
-        _show_remote_overlay()
+        _overlay_manager.show()
     else:
-        _hide_remote_overlay()
+        _overlay_manager.hide()
         _unfreeze_cursor()
     # Signal asyncio thread to restart listeners and notify receiver
     if _loop is not None and _remote_toggle_event is not None:
@@ -413,7 +218,6 @@ def _get_vk(key):
 
 
 def on_press(key):
-    global _overlay_user_hidden
     # Scroll Lock toggles remote control mode
     if key == keyboard.Key.scroll_lock:
         with _remote_lock:
@@ -426,11 +230,12 @@ def on_press(key):
         with _remote_lock:
             in_remote = _remote_mode
         if in_remote:
-            _overlay_user_hidden = not _overlay_user_hidden
-            if _overlay_user_hidden:
-                _hide_remote_overlay()
+            now_hidden = not _overlay_manager.is_user_hidden()
+            _overlay_manager.set_user_hidden(now_hidden)
+            if now_hidden:
+                _overlay_manager.hide()
             else:
-                _show_remote_overlay()
+                _overlay_manager.show()
             return  # Don't send Pause to receiver
 
     key_str = key_to_str(key)
@@ -458,23 +263,12 @@ def on_release(key):
 
 
 # --- Mouse movement (Raw Input API, 60Hz throttled) ---
-_last_mouse_send = [0.0]
-_MOUSE_SEND_INTERVAL = 1.0 / 60  # ~16ms
-_raw_mouse_accum = [0, 0]  # accumulated dx, dy between sends
-
-
-def _flush_mouse_accum():
-    """Send accumulated raw mouse deltas and reset accumulator."""
-    adx, ady = _raw_mouse_accum
-    if adx == 0 and ady == 0:
-        return
-    _raw_mouse_accum[0] = 0
-    _raw_mouse_accum[1] = 0
-    _last_mouse_send[0] = time.time()
+def _on_raw_mouse_delta(dx, dy):
+    """raw_mouse モジュールから 16ms 間隔で呼ばれる。"""
     msg = json.dumps({
         "type": "mouse_move",
-        "dx": adx,
-        "dy": ady,
+        "dx": dx,
+        "dy": dy,
         "source": "mouse",
         "timestamp": time.time(),
     })
@@ -483,160 +277,7 @@ def _flush_mouse_accum():
 
 
 def raw_mouse_loop():
-    """Thread: receives raw mouse deltas via Windows Raw Input API.
-    Works even when games lock the cursor to screen center."""
-    import ctypes
-    from ctypes import wintypes, WINFUNCTYPE, POINTER, byref, sizeof
-
-    user32 = ctypes.windll.user32
-
-    # Constants
-    WM_INPUT = 0x00FF
-    RID_INPUT = 0x10000003
-    RIM_TYPEMOUSE = 0
-    RIDEV_INPUTSINK = 0x00000100
-    MOUSE_MOVE_ABSOLUTE = 0x01
-    PM_REMOVE = 0x0001
-
-    WNDPROC_TYPE = WINFUNCTYPE(
-        ctypes.c_long, wintypes.HWND, wintypes.UINT,
-        wintypes.WPARAM, wintypes.LPARAM,
-    )
-
-    class RAWINPUTDEVICE(ctypes.Structure):
-        _fields_ = [
-            ("usUsagePage", wintypes.USHORT),
-            ("usUsage", wintypes.USHORT),
-            ("dwFlags", wintypes.DWORD),
-            ("hwndTarget", wintypes.HWND),
-        ]
-
-    class RAWINPUTHEADER(ctypes.Structure):
-        _fields_ = [
-            ("dwType", wintypes.DWORD),
-            ("dwSize", wintypes.DWORD),
-            ("hDevice", wintypes.HANDLE),
-            ("wParam", wintypes.WPARAM),
-        ]
-
-    class _ButtonsUnion(ctypes.Union):
-        class _S(ctypes.Structure):
-            _fields_ = [
-                ("usButtonFlags", wintypes.USHORT),
-                ("usButtonData", ctypes.c_short),
-            ]
-        _fields_ = [("ulButtons", wintypes.ULONG), ("s", _S)]
-
-    class RAWMOUSE(ctypes.Structure):
-        _fields_ = [
-            ("usFlags", wintypes.USHORT),
-            ("u", _ButtonsUnion),
-            ("ulRawButtons", wintypes.ULONG),
-            ("lLastX", wintypes.LONG),
-            ("lLastY", wintypes.LONG),
-            ("ulExtraInformation", wintypes.ULONG),
-        ]
-
-    class RAWINPUT(ctypes.Structure):
-        _fields_ = [
-            ("header", RAWINPUTHEADER),
-            ("mouse", RAWMOUSE),
-        ]
-
-    class WNDCLASSEXW(ctypes.Structure):
-        _fields_ = [
-            ("cbSize", wintypes.UINT),
-            ("style", wintypes.UINT),
-            ("lpfnWndProc", WNDPROC_TYPE),
-            ("cbClsExtra", ctypes.c_int),
-            ("cbWndExtra", ctypes.c_int),
-            ("hInstance", wintypes.HINSTANCE),
-            ("hIcon", wintypes.HICON),
-            ("hCursor", wintypes.HANDLE),
-            ("hbrBackground", wintypes.HANDLE),
-            ("lpszMenuName", wintypes.LPCWSTR),
-            ("lpszClassName", wintypes.LPCWSTR),
-            ("hIconSm", wintypes.HICON),
-        ]
-
-    # Set argtypes for GetRawInputData
-    user32.GetRawInputData.argtypes = [
-        wintypes.HANDLE, wintypes.UINT, ctypes.c_void_p,
-        POINTER(wintypes.UINT), wintypes.UINT,
-    ]
-    user32.GetRawInputData.restype = wintypes.UINT
-
-    def wnd_proc(hwnd, msg_id, wparam, lparam):
-        if msg_id == WM_INPUT:
-            buf = ctypes.create_string_buffer(256)
-            size = wintypes.UINT(256)
-            result = user32.GetRawInputData(
-                lparam, RID_INPUT, buf, byref(size),
-                sizeof(RAWINPUTHEADER),
-            )
-            if result > 0:
-                raw = ctypes.cast(buf, POINTER(RAWINPUT)).contents
-                if (raw.header.dwType == RIM_TYPEMOUSE
-                        and not (raw.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)):
-                    dx = raw.mouse.lLastX
-                    dy = raw.mouse.lLastY
-                    if dx != 0 or dy != 0:
-                        _raw_mouse_accum[0] += dx
-                        _raw_mouse_accum[1] += dy
-                        now = time.time()
-                        if now - _last_mouse_send[0] >= _MOUSE_SEND_INTERVAL:
-                            _flush_mouse_accum()
-            return 0
-        return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
-
-    # prevent GC of callback
-    proc = WNDPROC_TYPE(wnd_proc)
-
-    hinstance = ctypes.windll.kernel32.GetModuleHandleW(None)
-
-    wc = WNDCLASSEXW()
-    wc.cbSize = sizeof(WNDCLASSEXW)
-    wc.lpfnWndProc = proc
-    wc.hInstance = hinstance
-    wc.lpszClassName = "RawMouseInput"
-
-    if not user32.RegisterClassExW(byref(wc)):
-        print("[RawMouse] Failed to register window class")
-        return
-
-    hwnd = user32.CreateWindowExW(
-        0, "RawMouseInput", "", 0,
-        0, 0, 0, 0,
-        None, None, hinstance, None,
-    )
-    if not hwnd:
-        print("[RawMouse] Failed to create window")
-        return
-
-    # Register for raw mouse input
-    rid = RAWINPUTDEVICE()
-    rid.usUsagePage = 0x01  # HID_USAGE_PAGE_GENERIC
-    rid.usUsage = 0x02      # HID_USAGE_GENERIC_MOUSE
-    rid.dwFlags = RIDEV_INPUTSINK
-    rid.hwndTarget = hwnd
-
-    if not user32.RegisterRawInputDevices(byref(rid), 1, sizeof(RAWINPUTDEVICE)):
-        print("[RawMouse] Failed to register raw input device")
-        return
-
-    print("[RawMouse] Raw mouse input listener started")
-
-    # Message pump
-    msg = wintypes.MSG()
-    while running:
-        while user32.PeekMessageW(byref(msg), hwnd, 0, 0, PM_REMOVE):
-            user32.TranslateMessage(byref(msg))
-            user32.DispatchMessageW(byref(msg))
-        # Flush any remaining accumulated deltas
-        now = time.time()
-        if now - _last_mouse_send[0] >= _MOUSE_SEND_INTERVAL:
-            _flush_mouse_accum()
-        time.sleep(0.001)
+    raw_mouse.run(lambda: running, _on_raw_mouse_delta)
 
 
 # --- Mouse listener ---
@@ -694,6 +335,9 @@ def scan_controllers():
     return controllers
 
 
+_GAMEPAD_POLL_INTERVAL = 1.0 / 60  # 60Hz
+
+
 def gamepad_loop():
     global selected_controller_id, _request_refresh
     load_pygame()
@@ -707,6 +351,19 @@ def gamepad_loop():
     # Initial scan
     scan_controllers()
 
+    try:
+      _run_gamepad_main(joy, joy_id, prev_buttons, prev_axes, prev_axes_raw, last_reinit)
+    finally:
+        if pygame is not None:
+            try:
+                pygame.joystick.quit()
+                pygame.quit()
+            except Exception:
+                pass
+
+
+def _run_gamepad_main(joy, joy_id, prev_buttons, prev_axes, prev_axes_raw, last_reinit):
+    global selected_controller_id, _request_refresh
     while running:
         pygame.event.pump()
 
@@ -830,7 +487,7 @@ def gamepad_loop():
                 event_queue.put(msg)
                 enqueue_monitor(msg)
 
-        time.sleep(0.008)
+        time.sleep(_GAMEPAD_POLL_INTERVAL)
 
 
 # --- HTTP Server for GUI ---
@@ -1194,10 +851,28 @@ async def main():
     )
 
 
+def _shutdown_local_resources():
+    """Stop listeners and tear down overlay/pygame on process exit."""
+    global running
+    running = False
+    for listener in (_kb_listener, _mouse_listener):
+        if listener is not None:
+            try:
+                listener.stop()
+            except Exception:
+                pass
+    try:
+        _overlay_manager.shutdown()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     print(f"[Config] host={config['host']} port={config['port']}")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        running = False
-        print("\n[Sender] Stopped.")
+        print("\n[Sender] Stopping...")
+    finally:
+        _shutdown_local_resources()
+        print("[Sender] Stopped.")

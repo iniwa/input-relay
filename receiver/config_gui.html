@@ -862,6 +862,16 @@
 <script>
 const PV_NEUTRAL = 'N';
 
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 let overlayConfig = {};
 let senderConfig = {};
 let previewMode = 'keyboard';
@@ -952,7 +962,7 @@ fetch('/api/remote-control').then(r => r.json()).then(d => updateRcButton(d.enab
 // --- Label rendering with \n support in preview ---
 function pvSetLabel(el, label) {
   if (label && label.includes('\\n')) {
-    el.innerHTML = label.replace(/\\n/g, '<br>');
+    el.innerHTML = escapeHtml(label).replace(/\\n/g, '<br>');
   } else {
     el.textContent = label;
   }
@@ -1713,7 +1723,7 @@ function pvAddHistory(text) {
   hist.style.display = 'flex';
   // flip=true: newest at top (normal order reversed), flip=false: newest at bottom (normal order)
   const entries = pvHistFlip() ? pvHistoryEntries.slice().reverse() : pvHistoryEntries;
-  hist.innerHTML = entries.map(e => `<div class="pv-history-entry">${e}</div>`).join('');
+  hist.innerHTML = entries.map(e => `<div class="pv-history-entry">${escapeHtml(e)}</div>`).join('');
 }
 
 // Keyboard input for preview
@@ -1740,11 +1750,11 @@ function renderKbKeys() {
   const keys = overlayConfig.keyboard?.displayKeys || [];
   tbody.innerHTML = keys.map((k, i) => `
     <tr draggable="true">
-      <td><input value="${k.key}" data-i="${i}" data-f="key"></td>
-      <td><input value="${k.label}" data-i="${i}" data-f="label"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.row}" data-i="${i}" data-f="row"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.col}" data-i="${i}" data-f="col"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.width || 1}" min="0.1" data-i="${i}" data-f="width"></td>
+      <td><input value="${escapeHtml(k.key)}" data-i="${i}" data-f="key"></td>
+      <td><input value="${escapeHtml(k.label)}" data-i="${i}" data-f="label"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.row) || 0}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.col) || 0}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.width) || 1}" min="0.1" data-i="${i}" data-f="width"></td>
       <td><button class="btn-del" onclick="delKbKey(${i})">✕</button></td>
     </tr>
   `).join('');
@@ -1791,13 +1801,13 @@ function renderLvTable(tbodyId, items, field) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = items.map((k, i) => `
     <tr draggable="true">
-      <td><input value="${k.key}" data-i="${i}" data-f="key" data-sec="${field}"></td>
-      <td><input value="${k.gamepad || ''}" data-i="${i}" data-f="gamepad" data-sec="${field}"></td>
-      <td><input value="${k.label}" data-i="${i}" data-f="label" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.row}" data-i="${i}" data-f="row" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.col}" data-i="${i}" data-f="col" data-sec="${field}"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${k.width || 1}" min="0.1" data-i="${i}" data-f="width" data-sec="${field}"></td>
-      <td><button class="btn-del" onclick="delLv('${field}',${i})">✕</button></td>
+      <td><input value="${escapeHtml(k.key)}" data-i="${i}" data-f="key" data-sec="${escapeHtml(field)}"></td>
+      <td><input value="${escapeHtml(k.gamepad || '')}" data-i="${i}" data-f="gamepad" data-sec="${escapeHtml(field)}"></td>
+      <td><input value="${escapeHtml(k.label)}" data-i="${i}" data-f="label" data-sec="${escapeHtml(field)}"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.row) || 0}" data-i="${i}" data-f="row" data-sec="${escapeHtml(field)}"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.col) || 0}" data-i="${i}" data-f="col" data-sec="${escapeHtml(field)}"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(k.width) || 1}" min="0.1" data-i="${i}" data-f="width" data-sec="${escapeHtml(field)}"></td>
+      <td><button class="btn-del" onclick="delLv('${escapeHtml(field)}',${i})">✕</button></td>
     </tr>
   `).join('');
   tbody.querySelectorAll('input').forEach(inp => {
@@ -1857,11 +1867,11 @@ function renderControllerTab() {
   const btns = cc.buttons || [];
   tbody.innerHTML = btns.map((b, i) => `
     <tr draggable="true">
-      <td><input value="${b.gamepad || ''}" data-i="${i}" data-f="gamepad"></td>
-      <td><input value="${b.label}" data-i="${i}" data-f="label"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${b.row}" data-i="${i}" data-f="row"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${b.col}" data-i="${i}" data-f="col"></td>
-      <td><input class="narrow" type="number" step="0.1" value="${b.width || 1}" min="0.1" data-i="${i}" data-f="width"></td>
+      <td><input value="${escapeHtml(b.gamepad || '')}" data-i="${i}" data-f="gamepad"></td>
+      <td><input value="${escapeHtml(b.label)}" data-i="${i}" data-f="label"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(b.row) || 0}" data-i="${i}" data-f="row"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(b.col) || 0}" data-i="${i}" data-f="col"></td>
+      <td><input class="narrow" type="number" step="0.1" value="${Number(b.width) || 1}" min="0.1" data-i="${i}" data-f="width"></td>
       <td><button class="btn-del" onclick="delCtrlBtn(${i})">✕</button></td>
     </tr>
   `).join('');
