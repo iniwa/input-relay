@@ -211,6 +211,7 @@
     background: rgba(0,0,0,0.3);
   }
 </style>
+<script src="/shared_render.js"></script>
 </head>
 <body>
 <div id="key-display" class="panel"></div>
@@ -349,19 +350,11 @@ function getDirArrow(numpad) {
 }
 
 // --- Label rendering with \n support ---
-function escapeHtml(s) {
-  if (s == null) return '';
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+const escapeHtml = SharedRender.escapeHtml;
 
 function setLabelContent(el, label) {
   if (label && label.includes('\\n')) {
-    el.innerHTML = escapeHtml(label).replace(/\\n/g, '<br>');
+    el.innerHTML = SharedRender.renderLabelHtml(label);
   } else {
     el.textContent = label;
   }
