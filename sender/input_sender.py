@@ -274,15 +274,8 @@ def on_release(key):
 
 
 # --- Mouse movement (Raw Input API, 60Hz throttled) ---
-_raw_delta_debug_counter = 0
-
-
 def _on_raw_mouse_delta(dx, dy):
     """raw_mouse モジュールから 16ms 間隔で呼ばれる。"""
-    global _raw_delta_debug_counter
-    _raw_delta_debug_counter += 1
-    if _raw_delta_debug_counter % 60 == 1:  # ~1 秒ごとに出力
-        print(f"[RawMouse] delta fired: dx={dx} dy={dy} remote={_remote_mode}")
     msg = json.dumps({
         "type": "mouse_move",
         "dx": dx,
@@ -865,8 +858,8 @@ async def main():
     _mouse_listener = mouse.Listener(on_click=on_mouse_click)
     _mouse_listener.start()
 
-    # NOTE: 独自 WH_MOUSE_LL は一旦無効化（Sub PC ポインタ移動停止の原因切り分け中）
-    # _ll_mouse_blocker.start()
+    # 低レベルマウスフックを起動（suppress フラグで動作切替）
+    _ll_mouse_blocker.start()
 
     raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
     raw_mouse_thread.start()
