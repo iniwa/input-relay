@@ -190,23 +190,34 @@ class OverlayManager:
             blocker = tk.Toplevel(self._root)
             blocker.overrideredirect(True)
             blocker.attributes("-topmost", True)
-            # alpha=0.03 は LWA_ALPHA の丸め誤差やドライバ差で click-through 化
-            # されないよう若干上げている（視覚的にはほぼ不可視）。
-            blocker.attributes("-alpha", 0.03)
-            blocker.configure(bg="#000000")
+            # LWA_ALPHA の丸め誤差やドライバ差で click-through 化されないよう
+            # alpha は 0.05 まで上げる（視覚的にはほぼ不可視）。
+            blocker.attributes("-alpha", 0.05)
+            blocker.configure(bg="#000000", cursor="arrow")
             blocker.geometry(f"{vw}x{vh}+{vx}+{vy}")
+            # Tk レベルでもマウス/ホイールを明示的に消化してイベント伝播を止める。
+            for seq in ("<Button-1>", "<Button-2>", "<Button-3>",
+                        "<ButtonRelease-1>", "<ButtonRelease-2>", "<ButtonRelease-3>",
+                        "<Double-Button-1>", "<Double-Button-3>", "<MouseWheel>"):
+                blocker.bind(seq, lambda e: "break")
             blocker.update_idletasks()
 
             HWND_TOPMOST = -1
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
-            SWP_NOACTIVATE = 0x0010
             SWP_SHOWWINDOW = 0x0040
             hwnd = blocker.winfo_id()
+            # SWP_NOACTIVATE を付けず foreground も奪う。Raw Input を使うアプリが
+            # 前面のまま WM_INPUT を受け取らないようにするため。
             user32.SetWindowPos(
                 hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
             )
+            try:
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
             self._blocker = blocker
         except Exception as e:
             print(f"[Overlay] Failed to create blocker: {e}")
