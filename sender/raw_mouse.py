@@ -99,6 +99,7 @@ def run(is_running, on_delta):
                 蓄積されるため、遅延はあっても精度は落ちない。
     """
     user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
 
     # GetRawInputData の引数型を明示 (Python 3.12+ で厳格化)
     user32.GetRawInputData.argtypes = [
@@ -106,6 +107,26 @@ def run(is_running, on_delta):
         POINTER(wintypes.UINT), wintypes.UINT,
     ]
     user32.GetRawInputData.restype = wintypes.UINT
+
+    # 64bit ハンドルを扱う呼び出しに restype/argtypes を明示。
+    # ll_mouse_hook など他モジュールが kernel32 のプロキシを共有して
+    # restype を変更するため、ここでも明示しないと argument 11
+    # (hInstance) で OverflowError が発生する。
+    kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+    kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+    user32.CreateWindowExW.restype = ctypes.c_void_p
+    user32.CreateWindowExW.argtypes = [
+        wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        wintypes.HWND, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+    ]
+    user32.RegisterClassExW.restype = wintypes.ATOM
+    user32.DefWindowProcW.restype = ctypes.c_long
+    user32.DefWindowProcW.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+    ]
+    user32.DispatchMessageW.restype = ctypes.c_long
+    user32.DispatchMessageW.argtypes = [POINTER(wintypes.MSG)]
 
     # Windows デフォルトタイマー分解能は ~15.6ms。timeBeginPeriod(1) で 1ms へ
     # 引き上げることで SetTimer(16) がほぼ正確に 16ms 間隔で発火する。
@@ -151,7 +172,7 @@ def run(is_running, on_delta):
         return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
 
     proc = _WNDPROC_TYPE(wnd_proc)
-    hinstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+    hinstance = kernel32.GetModuleHandleW(None)
 
     wc = _WNDCLASSEXW()
     wc.cbSize = sizeof(_WNDCLASSEXW)
