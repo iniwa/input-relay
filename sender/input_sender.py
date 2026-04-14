@@ -276,6 +276,10 @@ def on_release(key):
 # --- Mouse movement (Raw Input API, 60Hz throttled) ---
 def _on_raw_mouse_delta(dx, dy):
     """raw_mouse モジュールから 16ms 間隔で呼ばれる。"""
+    # リモートモード中はマウスを Sub PC 側の物理マウスで操作するため
+    # マウス関連イベントは転送しない。
+    if _remote_mode:
+        return
     msg = json.dumps({
         "type": "mouse_move",
         "dx": dx,
@@ -293,6 +297,11 @@ def raw_mouse_loop():
 
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
+    # リモートモード中はマウスイベントを Sub PC へ転送しない（Sub PC 側は
+    # 物理マウスで操作する運用のため）。OS レベルの suppress は pynput /
+    # ll_mouse_hook 側で引き続き掛かる。
+    if _remote_mode:
+        return
     btn_map = {
         mouse.Button.left: 'mouse_left',
         mouse.Button.right: 'mouse_right',
@@ -310,6 +319,8 @@ def on_mouse_click(x, y, button, pressed):
 
 
 def on_mouse_scroll(x, y, dx, dy):
+    if _remote_mode:
+        return
     msg = json.dumps({
         "type": "mouse_scroll",
         "dx": dx,
