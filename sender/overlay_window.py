@@ -205,24 +205,18 @@ class OverlayManager:
             HWND_TOPMOST = -1
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
             SWP_SHOWWINDOW = 0x0040
             hwnd = blocker.winfo_id()
-            # SWP_NOACTIVATE を付けず foreground も奪う。Raw Input を使うアプリが
-            # 前面のまま WM_INPUT を受け取らないようにするため。
+            # foreground は奪わない（奪うと raw_mouse の Raw Input 配送経路に
+            # 影響し Sub PC 側のポインタ移動が止まるため）。topmost + 通常の
+            # hit-test だけで、メッセージ経由のクリックはここで消化される。
+            # Raw Input で直接読むゲーム（SF6 の右クリック等）は原理的に
+            # ウィンドウ遮蔽では止められないので諦める。
             user32.SetWindowPos(
                 hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
-            try:
-                user32.BringWindowToTop(hwnd)
-                user32.SetForegroundWindow(hwnd)
-                # SetForegroundWindow は Windows の制約で失敗することがある。
-                # SwitchToThisWindow(hwnd, TRUE) は Alt+Tab 相当の切替で
-                # 成功率が高く、Raw Input/DirectInput 系ゲームからも foreground
-                # を確実に奪える。
-                user32.SwitchToThisWindow(hwnd, True)
-            except Exception:
-                pass
             self._blocker = blocker
         except Exception as e:
             print(f"[Overlay] Failed to create blocker: {e}")
