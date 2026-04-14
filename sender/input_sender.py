@@ -18,6 +18,7 @@ from pynput import keyboard, mouse
 
 import overlay_window
 import raw_mouse
+import ll_mouse_hook
 
 pygame = None
 
@@ -77,6 +78,9 @@ _mouse_listener = None
 _overlay_manager = overlay_window.OverlayManager(lambda: config)
 _OVERLAY_POSITIONS = overlay_window.valid_positions()
 
+# 低レベルマウスフック（pynput suppress のタイムアウト冗長化）
+_ll_mouse_blocker = ll_mouse_hook.LowLevelMouseBlocker()
+
 # Controller selection state
 selected_controller_id = 0
 _controller_lock = threading.Lock()
@@ -131,7 +135,9 @@ def _set_remote_mode(enabled):
         _overlay_manager.set_user_hidden(False)
         _freeze_cursor()
         _overlay_manager.show()
+        _ll_mouse_blocker.set_suppress(True)
     else:
+        _ll_mouse_blocker.set_suppress(False)
         _overlay_manager.hide()
         _unfreeze_cursor()
     # 新 listener を先に立ち上げてから旧 listener を stop する（ラグ窓を消す）。
@@ -852,6 +858,9 @@ async def main():
     _mouse_listener = mouse.Listener(on_click=on_mouse_click)
     _mouse_listener.start()
 
+    # 低レベルマウスフックを起動（suppress フラグで動作切替）
+    _ll_mouse_blocker.start()
+
     raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
     raw_mouse_thread.start()
 
@@ -884,6 +893,10 @@ def _shutdown_local_resources():
                 pass
     try:
         _overlay_manager.shutdown()
+    except Exception:
+        pass
+    try:
+        _ll_mouse_blocker.stop()
     except Exception:
         pass
 

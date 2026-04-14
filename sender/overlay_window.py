@@ -216,6 +216,11 @@ class OverlayManager:
             try:
                 user32.BringWindowToTop(hwnd)
                 user32.SetForegroundWindow(hwnd)
+                # SetForegroundWindow は Windows の制約で失敗することがある。
+                # SwitchToThisWindow(hwnd, TRUE) は Alt+Tab 相当の切替で
+                # 成功率が高く、Raw Input/DirectInput 系ゲームからも foreground
+                # を確実に奪える。
+                user32.SwitchToThisWindow(hwnd, True)
             except Exception:
                 pass
             self._blocker = blocker
