@@ -274,8 +274,15 @@ def on_release(key):
 
 
 # --- Mouse movement (Raw Input API, 60Hz throttled) ---
+_raw_delta_debug_counter = 0
+
+
 def _on_raw_mouse_delta(dx, dy):
     """raw_mouse モジュールから 16ms 間隔で呼ばれる。"""
+    global _raw_delta_debug_counter
+    _raw_delta_debug_counter += 1
+    if _raw_delta_debug_counter % 60 == 1:  # ~1 秒ごとに出力
+        print(f"[RawMouse] delta fired: dx={dx} dy={dy} remote={_remote_mode}")
     msg = json.dumps({
         "type": "mouse_move",
         "dx": dx,
