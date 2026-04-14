@@ -51,6 +51,7 @@ class OverlayManager:
         self._thread = None
         self._root = None
         self._window = None
+        self._blocker = None
         self._ready = threading.Event()
         self._cmd_queue = queue.Queue()
         self._user_hidden = False
@@ -128,10 +129,16 @@ class OverlayManager:
             except Exception:
                 pass
             try:
+                if self._blocker is not None:
+                    self._blocker.destroy()
+            except Exception:
+                pass
+            try:
                 self._root.destroy()
             except Exception:
                 pass
             self._window = None
+            self._blocker = None
             self._root = None
 
     def _poll_queue(self):
@@ -156,6 +163,22 @@ class OverlayManager:
         if self._window is not None or self._root is None:
             return
         import tkinter as tk
+
+        # 全画面透明ブロッカー: 低レベルフックが LowLevelHooksTimeout で外れても
+        # 物理的にクリックが背後へ届かないよう、画面全域を覆う半透明ウィンドウを出す。
+        # alpha=0.01 で事実上不可視、WS_EX_TRANSPARENT は付けない（＝クリックを食う）。
+        try:
+            sw = self._root.winfo_screenwidth()
+            sh = self._root.winfo_screenheight()
+            blocker = tk.Toplevel(self._root)
+            blocker.overrideredirect(True)
+            blocker.attributes("-topmost", True)
+            blocker.attributes("-alpha", 0.01)
+            blocker.configure(bg="#000000")
+            blocker.geometry(f"{sw}x{sh}+0+0")
+            self._blocker = blocker
+        except Exception as e:
+            print(f"[Overlay] Failed to create blocker: {e}")
 
         cfg = self._get_config()
         overlay_cfg = cfg.get("remote_overlay") or {}
@@ -197,6 +220,12 @@ class OverlayManager:
 
         # overrideredirect なウィンドウは Windows でフォーカス獲得が不安定なので
         # Win32 API で強制的に最前面へ持ってくる。
+        # blocker を先に lift してから label を最前面へ（z-order: blocker < label）
+        if self._blocker is not None:
+            try:
+                self._blocker.lift()
+            except Exception:
+                pass
         w.lift()
         w.focus_force()
         try:
@@ -216,3 +245,9 @@ class OverlayManager:
             except Exception:
                 pass
             self._window = None
+        if self._blocker is not None:
+            try:
+                self._blocker.destroy()
+            except Exception:
+                pass
+            self._blocker = None

@@ -118,7 +118,8 @@ def _unfreeze_cursor():
 
 
 def _set_remote_mode(enabled):
-    """Toggle remote control mode. Signals listener restart."""
+    """Toggle remote control mode. Restarts listeners synchronously so the
+    suppress hook is active before the next OS input is dispatched."""
     global _remote_mode
     with _remote_lock:
         was = _remote_mode
@@ -133,7 +134,11 @@ def _set_remote_mode(enabled):
     else:
         _overlay_manager.hide()
         _unfreeze_cursor()
-    # Signal asyncio thread to restart listeners and notify receiver
+    # 新 listener を先に立ち上げてから旧 listener を stop する（ラグ窓を消す）。
+    # この関数は pynput の on_press 内から呼ばれ得るが、stop() はフラグを立てる
+    # だけなので自スレッドから呼んでもデッドロックしない。
+    _restart_listeners(suppress=enabled)
+    # receiver / monitor への通知のみ非同期で
     if _loop is not None and _remote_toggle_event is not None:
         _loop.call_soon_threadsafe(_remote_toggle_event.set)
 
@@ -777,31 +782,47 @@ async def sender(host, port):
             print("[Remote] Auto-disabled due to disconnection")
 
 
+_restart_lock = threading.Lock()
+
+
 def _restart_listeners(suppress=False):
-    """Stop and restart keyboard/mouse listeners with optional suppress."""
+    """Restart keyboard/mouse listeners with optional suppress.
+    新 listener を先に start してから旧 listener を stop することで、
+    フック不在のラグ窓を作らない。自スレッド（on_press 内）から呼ばれても
+    安全なように stop は非ブロッキング前提で扱う。"""
     global _kb_listener, _mouse_listener
-    if _kb_listener is not None:
-        _kb_listener.stop()
-    if _mouse_listener is not None:
-        _mouse_listener.stop()
-    _kb_listener = keyboard.Listener(
-        on_press=on_press, on_release=on_release, suppress=suppress,
-    )
-    _kb_listener.start()
-    _mouse_listener = mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll, suppress=suppress)
-    _mouse_listener.start()
+    with _restart_lock:
+        old_kb = _kb_listener
+        old_mouse = _mouse_listener
+        new_kb = keyboard.Listener(
+            on_press=on_press, on_release=on_release, suppress=suppress,
+        )
+        new_kb.start()
+        new_mouse = mouse.Listener(
+            on_click=on_mouse_click, on_scroll=on_mouse_scroll, suppress=suppress,
+        )
+        new_mouse.start()
+        _kb_listener = new_kb
+        _mouse_listener = new_mouse
+        for old in (old_kb, old_mouse):
+            if old is None:
+                continue
+            try:
+                old.stop()
+            except Exception:
+                pass
     mode = "suppress" if suppress else "normal"
     print(f"[Listeners] Restarted ({mode})")
 
 
 async def _remote_toggle_handler():
-    """Watch for remote mode toggles and restart listeners accordingly."""
+    """Watch for remote mode toggles and notify receiver/monitor.
+    Listener 再起動は _set_remote_mode 側で同期実行済み。"""
     while running:
         await _remote_toggle_event.wait()
         _remote_toggle_event.clear()
         with _remote_lock:
             enabled = _remote_mode
-        _restart_listeners(suppress=enabled)
         # Notify receiver
         if ws_connection:
             try:
