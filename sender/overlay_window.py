@@ -165,17 +165,48 @@ class OverlayManager:
         import tkinter as tk
 
         # 全画面透明ブロッカー: 低レベルフックが LowLevelHooksTimeout で外れても
-        # 物理的にクリックが背後へ届かないよう、画面全域を覆う半透明ウィンドウを出す。
-        # alpha=0.01 で事実上不可視、WS_EX_TRANSPARENT は付けない（＝クリックを食う）。
+        # 物理的にクリックが背後へ届かないよう、仮想画面全域を覆う半透明ウィンドウを出す。
+        # WS_EX_TRANSPARENT は付けない（＝クリックを食う）。
+        # overrideredirect + -topmost だけでは Windows で Z-order が不安定なので
+        # SetWindowPos(HWND_TOPMOST) で強制的に最前面へ置く。
         try:
-            sw = self._root.winfo_screenwidth()
-            sh = self._root.winfo_screenheight()
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            if vw <= 0 or vh <= 0:
+                vx, vy = 0, 0
+                vw = self._root.winfo_screenwidth()
+                vh = self._root.winfo_screenheight()
+
             blocker = tk.Toplevel(self._root)
             blocker.overrideredirect(True)
             blocker.attributes("-topmost", True)
-            blocker.attributes("-alpha", 0.01)
+            # alpha=0.03 は LWA_ALPHA の丸め誤差やドライバ差で click-through 化
+            # されないよう若干上げている（視覚的にはほぼ不可視）。
+            blocker.attributes("-alpha", 0.03)
             blocker.configure(bg="#000000")
-            blocker.geometry(f"{sw}x{sh}+0+0")
+            blocker.geometry(f"{vw}x{vh}+{vx}+{vy}")
+            blocker.update_idletasks()
+
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            hwnd = blocker.winfo_id()
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
             self._blocker = blocker
         except Exception as e:
             print(f"[Overlay] Failed to create blocker: {e}")
