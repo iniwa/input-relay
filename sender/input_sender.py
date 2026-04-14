@@ -858,8 +858,8 @@ async def main():
     _mouse_listener = mouse.Listener(on_click=on_mouse_click)
     _mouse_listener.start()
 
-    # 低レベルマウスフックを起動（suppress フラグで動作切替）
-    _ll_mouse_blocker.start()
+    # NOTE: 独自 WH_MOUSE_LL は一旦無効化（Sub PC ポインタ移動停止の原因切り分け中）
+    # _ll_mouse_blocker.start()
 
     raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
     raw_mouse_thread.start()
