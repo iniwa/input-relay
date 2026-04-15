@@ -173,44 +173,207 @@ def _set_rc_state(enabled):
         asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
 
 
+def _api_get_config(handler, body):
+    return load_config()
+
+
+def _api_get_presets(handler, body):
+    return load_presets()
+
+
+def _api_get_layout_presets(handler, body):
+    return load_layout_presets()
+
+
+def _api_get_remote_control(handler, body):
+    with _rc_lock:
+        enabled = remote_control_enabled
+    return {"enabled": enabled}
+
+
+def _api_get_sender_config(handler, body):
+    sender_cfg_path = CONFIG_DIR / "sender_config.json"
+    with _config_io_lock:
+        if sender_cfg_path.exists():
+            return json.loads(sender_cfg_path.read_text(encoding="utf-8"))
+    return {}
+
+
+def _api_post_config(handler, body):
+    data = json.loads(body)
+    save_config(data)
+    print(f"[API] config updated by {_client_label(handler)}")
+    _broadcast_change("config", {"data": data})
+    return {"ok": True}
+
+
+def _api_post_presets(handler, body):
+    data = json.loads(body)
+    ptype = data.get("type", "keyboard")
+    name = data["name"]
+    presets = load_presets()
+    if ptype not in presets:
+        presets[ptype] = {}
+    presets[ptype][name] = {
+        ptype: data[ptype],
+        "layout": data.get("layout", {}),
+        "inputHistory": data.get("inputHistory", {}),
+    }
+    save_presets(presets)
+    print(f"[API] preset saved: {ptype}/{name} by {_client_label(handler)}")
+    _broadcast_change("presets", {"type": ptype, "name": name, "op": "save"})
+    return {"ok": True}
+
+
+def _api_post_layout_presets(handler, body):
+    data = json.loads(body)
+    ptype = data.get("type", "keyboard")
+    name = data["name"]
+    presets = load_layout_presets()
+    if ptype not in presets:
+        presets[ptype] = {}
+    presets[ptype][name] = {
+        "layout": data.get("layout", {}),
+        "inputHistory": data.get("inputHistory", {}),
+    }
+    save_layout_presets(presets)
+    print(f"[API] layout-preset saved: {ptype}/{name} by {_client_label(handler)}")
+    _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "save"})
+    return {"ok": True}
+
+
+def _api_post_sender_config(handler, body):
+    data = json.loads(body)
+    sender_cfg_path = CONFIG_DIR / "sender_config.json"
+    with _config_io_lock:
+        sender_cfg_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    print(f"[API] sender-config updated by {_client_label(handler)}")
+    _broadcast_change("sender_config", {"data": data})
+    return {"ok": True}
+
+
+def _api_post_refresh(handler, body):
+    data = load_config()
+    _broadcast_change("config", {"data": data})
+    return {"ok": True}
+
+
+def _api_post_remote_control(handler, body):
+    data = json.loads(body)
+    enabled = bool(data.get("enabled", False))
+    _set_rc_state(enabled)
+    if _ws_loop:
+        asyncio.run_coroutine_threadsafe(
+            _send_to_sender({"type": "remote_control", "enabled": enabled}),
+            _ws_loop,
+        )
+    return {"ok": True, "enabled": enabled}
+
+
+def _api_post_mode_switch(handler, body):
+    data = json.loads(body)
+    mode = data.get("mode", "keyboard")
+    msg = json.dumps({
+        "type": "mode_switch",
+        "key": mode,
+        "source": "system",
+        "timestamp": time.time(),
+    })
+    if _ws_loop:
+        asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+    return {"ok": True}
+
+
+def _api_delete_presets(handler, body):
+    data = json.loads(body)
+    ptype = data.get("type", "keyboard")
+    name = data["name"]
+    presets = load_presets()
+    presets.get(ptype, {}).pop(name, None)
+    save_presets(presets)
+    print(f"[API] preset deleted: {ptype}/{name} by {_client_label(handler)}")
+    _broadcast_change("presets", {"type": ptype, "name": name, "op": "delete"})
+    return {"ok": True}
+
+
+def _api_delete_layout_presets(handler, body):
+    data = json.loads(body)
+    ptype = data.get("type", "keyboard")
+    name = data["name"]
+    presets = load_layout_presets()
+    presets.get(ptype, {}).pop(name, None)
+    save_layout_presets(presets)
+    print(f"[API] layout-preset deleted: {ptype}/{name} by {_client_label(handler)}")
+    _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "delete"})
+    return {"ok": True}
+
+
+def _api_delete_restart(handler, body):
+    # _restart_server は 0.5s 待ってから execv するため、レスポンス送信が先行する
+    threading.Thread(target=_restart_server, daemon=True).start()
+    return {"ok": True}
+
+
+# path → handler(handler_obj, body) -> dict のディスパッチ表。
+# 例外は呼び出し側で一括 400 化、戻り dict を 200 で JSON 応答する。
+_GET_ROUTES = {
+    "/api/config":         _api_get_config,
+    "/api/presets":        _api_get_presets,
+    "/api/layout-presets": _api_get_layout_presets,
+    "/api/remote-control": _api_get_remote_control,
+    "/api/sender-config":  _api_get_sender_config,
+}
+
+_POST_ROUTES = {
+    "/api/config":         _api_post_config,
+    "/api/presets":        _api_post_presets,
+    "/api/layout-presets": _api_post_layout_presets,
+    "/api/sender-config":  _api_post_sender_config,
+    "/api/refresh":        _api_post_refresh,
+    "/api/remote-control": _api_post_remote_control,
+    "/api/mode-switch":    _api_post_mode_switch,
+}
+
+_DELETE_ROUTES = {
+    "/api/presets":        _api_delete_presets,
+    "/api/layout-presets": _api_delete_layout_presets,
+    "/api/restart":        _api_delete_restart,
+}
+
+_OVERLAY_MODES = ("history", "input", "mouse-trail")
+
+
 class OverlayHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _dispatch(self, routes, body=b""):
+        """共通ディスパッチ: 該当ハンドラを引いて JSON で応答。
+        ハンドラが例外を投げたら 400、404 は呼び出し側で処理。"""
+        path = urllib.parse.urlparse(self.path).path
+        handler = routes.get(path)
+        if handler is None:
+            return False
+        try:
+            self._json_response(handler(self, body))
+        except Exception as e:
+            logger.debug("API %s failed", path, exc_info=True)
+            self._json_response({"error": str(e)}, 400)
+        return True
+
+    def _read_body(self):
+        return self.rfile.read(int(self.headers.get("Content-Length", 0)))
+
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path.lstrip("/")
-
-        if path == "api/config":
-            self._json_response(load_config())
+        if self._dispatch(_GET_ROUTES):
             return
 
-        if path in ("history", "input", "mouse-trail"):
+        path = urllib.parse.urlparse(self.path).path.lstrip("/")
+        if path in _OVERLAY_MODES:
             self._serve_overlay_with_mode(path)
-            return
-
-        if path == "api/presets":
-            self._json_response(load_presets())
-            return
-
-        if path == "api/layout-presets":
-            self._json_response(load_layout_presets())
-            return
-
-        if path == "api/remote-control":
-            with _rc_lock:
-                enabled = remote_control_enabled
-            self._json_response({"enabled": enabled})
-            return
-
-        if path == "api/sender-config":
-            # Read sender config from sender dir (if accessible)
-            sender_cfg_path = CONFIG_DIR / "sender_config.json"
-            with _config_io_lock:
-                if sender_cfg_path.exists():
-                    self._json_response(json.loads(sender_cfg_path.read_text(encoding="utf-8")))
-                else:
-                    self._json_response({})
             return
 
         # Serve static files
@@ -235,160 +398,14 @@ class OverlayHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length)
-
-        if parsed.path == "/api/config":
-            try:
-                data = json.loads(body)
-                save_config(data)
-                print(f"[API] config updated by {_client_label(self)}")
-                _broadcast_change("config", {"data": data})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/presets":
-            try:
-                data = json.loads(body)
-                ptype = data.get("type", "keyboard")
-                name = data["name"]
-                presets = load_presets()
-                if ptype not in presets:
-                    presets[ptype] = {}
-                presets[ptype][name] = {ptype: data[ptype], "layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
-                save_presets(presets)
-                print(f"[API] preset saved: {ptype}/{name} by {_client_label(self)}")
-                _broadcast_change("presets", {"type": ptype, "name": name, "op": "save"})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/layout-presets":
-            try:
-                data = json.loads(body)
-                ptype = data.get("type", "keyboard")
-                name = data["name"]
-                presets = load_layout_presets()
-                if ptype not in presets:
-                    presets[ptype] = {}
-                presets[ptype][name] = {"layout": data.get("layout", {}), "inputHistory": data.get("inputHistory", {})}
-                save_layout_presets(presets)
-                print(f"[API] layout-preset saved: {ptype}/{name} by {_client_label(self)}")
-                _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "save"})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/sender-config":
-            try:
-                data = json.loads(body)
-                sender_cfg_path = CONFIG_DIR / "sender_config.json"
-                with _config_io_lock:
-                    sender_cfg_path.write_text(
-                        json.dumps(data, indent=2, ensure_ascii=False),
-                        encoding="utf-8",
-                    )
-                print(f"[API] sender-config updated by {_client_label(self)}")
-                _broadcast_change("sender_config", {"data": data})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/refresh":
-            try:
-                data = load_config()
-                _broadcast_change("config", {"data": data})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/remote-control":
-            try:
-                data = json.loads(body)
-                enabled = bool(data.get("enabled", False))
-                _set_rc_state(enabled)
-                # Notify sender to toggle input suppression
-                if _ws_loop:
-                    asyncio.run_coroutine_threadsafe(
-                        _send_to_sender({"type": "remote_control", "enabled": enabled}),
-                        _ws_loop,
-                    )
-                self._json_response({"ok": True, "enabled": enabled})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/mode-switch":
-            try:
-                data = json.loads(body)
-                mode = data.get("mode", "keyboard")
-                msg = json.dumps({
-                    "type": "mode_switch",
-                    "key": mode,
-                    "source": "system",
-                    "timestamp": time.time(),
-                })
-                if _ws_loop:
-                    asyncio.run_coroutine_threadsafe(
-                        broadcast_to_browsers(msg), _ws_loop
-                    )
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        self.send_response(404)
-        self.end_headers()
+        if not self._dispatch(_POST_ROUTES, self._read_body()):
+            self.send_response(404)
+            self.end_headers()
 
     def do_DELETE(self):
-        parsed = urllib.parse.urlparse(self.path)
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length)
-
-        if parsed.path == "/api/presets":
-            try:
-                data = json.loads(body)
-                ptype = data.get("type", "keyboard")
-                name = data["name"]
-                presets = load_presets()
-                presets.get(ptype, {}).pop(name, None)
-                save_presets(presets)
-                print(f"[API] preset deleted: {ptype}/{name} by {_client_label(self)}")
-                _broadcast_change("presets", {"type": ptype, "name": name, "op": "delete"})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/layout-presets":
-            try:
-                data = json.loads(body)
-                ptype = data.get("type", "keyboard")
-                name = data["name"]
-                presets = load_layout_presets()
-                presets.get(ptype, {}).pop(name, None)
-                save_layout_presets(presets)
-                print(f"[API] layout-preset deleted: {ptype}/{name} by {_client_label(self)}")
-                _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "delete"})
-                self._json_response({"ok": True})
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-            return
-
-        if parsed.path == "/api/restart":
-            self._json_response({"ok": True})
-            threading.Thread(target=_restart_server, daemon=True).start()
-            return
-
-        self.send_response(404)
-        self.end_headers()
+        if not self._dispatch(_DELETE_ROUTES, self._read_body()):
+            self.send_response(404)
+            self.end_headers()
 
     def _serve_overlay_with_mode(self, mode):
         if mode == "mouse-trail":

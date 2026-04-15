@@ -1,7 +1,7 @@
 # input-relay JSON API リファレンス
 
-> 調査日: 2026-04-13
-> 対象: `receiver/input_server.py`, `sender/input_sender.py`
+> 調査日: 2026-04-15
+> 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/gamepad.py`
 
 外部管理ツール (secretary-bot 等) から LAN 経由で input-relay の設定 CRUD と状態取得を行うための仕様。実装と乖離しないよう、実ソースから確認した挙動のみを記載する。
 
@@ -19,7 +19,9 @@ input-relay は以下の 2 プロセスで構成される (単独モードでは
 - すべて `0.0.0.0` で listen し、LAN 公開前提。
 - **認証はない。** LAN 内信頼ゾーンでのみ使用すること。
 - HTTP は `ThreadingHTTPServer` で動くため複数クライアントから同時アクセス可能。設定書き込みは内部で単一ロック (`_config_io_lock`) で直列化される。
-- ポートはコマンドライン引数 (receiver) または `sender_config.json` (sender) で変更可能。
+- receiver のポートはコマンドライン引数 (`--port` `--http-port`) で変更可能。
+- sender のポートは `sender_config.json` の `http_port` / `monitor_port` キーで変更可能 (キーが無ければ既定の 8082 / 8083)。
+- 環境変数 `INPUT_RELAY_DEBUG=1` を付けて起動すると receiver / sender 両方で `logging` が DEBUG レベルになり、内部で握り潰している例外のスタックトレースが出力される (障害調査用)。
 
 ### 設定ファイルの場所
 
@@ -30,7 +32,7 @@ receiver から見て `../config/` 配下:
 | `config/config.json` | オーバーレイ表示設定全般 (キーボード/レバーレス/コントローラのレイアウト, 履歴設定など) |
 | `config/presets.json` | プリセット (`{ keyboard: {...}, leverless: {...}, controller: {...} }`) |
 | `config/layout_presets.json` | レイアウト+履歴のみのプリセット (同じ 3 タイプ別) |
-| `config/sender_config.json` | sender 接続先・トグルキー・リモートオーバーレイ設定 |
+| `config/sender_config.json` | sender 接続先・トグルキー・リモートオーバーレイ設定・自身の HTTP/Monitor ポート |
 
 ---
 
@@ -166,13 +168,17 @@ receiver 経由で sender 側設定ファイルを読み書きする。**sender 
   "remote_overlay": {
     "enabled": true,
     "position": "top-left"   // top-left/top-center/top-right/middle-left/middle-right/bottom-left/bottom-center/bottom-right
-  }
+  },
+  "http_port": 8082,         // 任意。sender の HTTP API ポート (省略時 8082)
+  "monitor_port": 8083       // 任意。sender の Monitor WebSocket ポート (省略時 8083)
 }
 ```
 
 レスポンス: `{ "ok": true }`
 
 ブラウザに `config_change` (kind=`sender_config`, data) を通知。
+
+> `http_port` / `monitor_port` を変えた場合、sender プロセス側に反映するには `POST http://<sender>:8082/api/restart` で再起動する必要がある。
 
 ### 2.5 強制リフレッシュ
 
@@ -346,7 +352,7 @@ JSON でない or パース不可能なメッセージは無視される。
 
 ### 4.3 `POST /api/config`
 
-sender 設定を更新する。受け付けるキー: `host`, `port`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される。
+sender 設定を更新する。受け付けるキー: `host`, `port`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される (sender 自身のポート `http_port` / `monitor_port` の変更にはこの API は使えない。`sender_config.json` を直接編集するか、receiver の `POST /api/sender-config` で全置換した上で `POST /api/restart` する必要がある)。
 
 リクエストボディ例:
 ```json
@@ -406,7 +412,7 @@ sender の現在状態。
 
 ### 4.7 `POST /api/refresh-controllers`
 
-コントローラを再スキャン (`gamepad_loop` に再スキャン要求を送り、約 0.3 秒待ってから結果を返す)。
+コントローラを再スキャン (`sender/gamepad.py` の `Gamepad.request_refresh()` に再スキャン要求を送り、約 0.3 秒待ってから結果を返す)。
 
 レスポンス:
 ```json
