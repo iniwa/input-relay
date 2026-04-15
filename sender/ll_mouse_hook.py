@@ -13,8 +13,11 @@ pynput の suppress=True でも block できるが、コールバックが Pytho
 from __future__ import annotations
 
 import ctypes
+import logging
 import threading
 from ctypes import wintypes
+
+logger = logging.getLogger("ll_mouse_hook")
 
 
 user32 = ctypes.windll.user32
@@ -97,7 +100,7 @@ class LowLevelMouseBlocker:
             try:
                 user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
             except Exception:
-                pass
+                logger.debug("PostThreadMessageW(WM_QUIT) failed", exc_info=True)
         if self._thread is not None:
             self._thread.join(timeout=1.0)
         self._thread = None
@@ -134,4 +137,4 @@ class LowLevelMouseBlocker:
             try:
                 user32.UnhookWindowsHookEx(self._hook)
             except Exception:
-                pass
+                logger.debug("UnhookWindowsHookEx failed", exc_info=True)

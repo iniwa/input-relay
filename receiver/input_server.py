@@ -5,17 +5,24 @@ Run on Sub PC.
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import time
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import urllib.parse
 
 import websockets
 
 import input_injector
+
+logging.basicConfig(
+    level=logging.DEBUG if os.environ.get("INPUT_RELAY_DEBUG") else logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("receiver")
 
 browser_clients = set()
 _browser_lock = asyncio.Lock()
@@ -104,7 +111,7 @@ def _client_label(handler):
     """Return a short string identifying the HTTP client for logs."""
     try:
         ip = handler.client_address[0]
-    except Exception:
+    except (AttributeError, IndexError):
         ip = "?"
     origin = handler.headers.get("Origin", "")
     ua = handler.headers.get("User-Agent", "")
@@ -148,7 +155,7 @@ async def _send_to_sender(data):
         try:
             await sender_ws.send(json.dumps(data))
         except Exception:
-            pass
+            logger.debug("send to sender failed", exc_info=True)
 
 
 def _set_rc_state(enabled):
@@ -438,7 +445,7 @@ def start_http_server(port):
         try:
             _http_server.server_close()
         except Exception:
-            pass
+            logger.debug("http server_close failed", exc_info=True)
 
 
 def shutdown_http_server():
@@ -451,7 +458,7 @@ def shutdown_http_server():
     try:
         srv.shutdown()
     except Exception:
-        pass
+        logger.debug("http shutdown failed", exc_info=True)
 
 
 async def browser_handler(ws):
@@ -594,5 +601,5 @@ if __name__ == "__main__":
                 import standalone_capture
                 standalone_capture.stop()
             except Exception:
-                pass
+                logger.debug("standalone stop failed", exc_info=True)
         print("[Server] Stopped.")

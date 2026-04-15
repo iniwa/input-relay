@@ -8,8 +8,11 @@ queue 経由で show/hide を依頼する。
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
+
+logger = logging.getLogger("overlay")
 
 
 _OVERLAY_POSITIONS = (
@@ -88,7 +91,7 @@ class OverlayManager:
         try:
             self._cmd_queue.put("quit")
         except Exception:
-            pass
+            logger.debug("overlay shutdown enqueue failed", exc_info=True)
 
     # --- internal ---
     def _ensure_thread(self):
@@ -123,20 +126,13 @@ class OverlayManager:
         except Exception as e:
             print(f"[Overlay] mainloop exited: {e}")
         finally:
-            try:
-                if self._window is not None:
-                    self._window.destroy()
-            except Exception:
-                pass
-            try:
-                if self._blocker is not None:
-                    self._blocker.destroy()
-            except Exception:
-                pass
-            try:
-                self._root.destroy()
-            except Exception:
-                pass
+            for name, w in (("window", self._window), ("blocker", self._blocker), ("root", self._root)):
+                if w is None:
+                    continue
+                try:
+                    w.destroy()
+                except Exception:
+                    logger.debug("overlay %s.destroy failed", name, exc_info=True)
             self._window = None
             self._blocker = None
             self._root = None
@@ -266,7 +262,7 @@ class OverlayManager:
             try:
                 self._blocker.lift()
             except Exception:
-                pass
+                logger.debug("blocker.lift failed", exc_info=True)
         w.lift()
         w.focus_force()
         try:
@@ -275,20 +271,17 @@ class OverlayManager:
             ctypes.windll.user32.BringWindowToTop(hwnd)
             ctypes.windll.user32.SetForegroundWindow(hwnd)
         except Exception:
-            pass
+            logger.debug("BringWindowToTop/SetForegroundWindow failed", exc_info=True)
 
         self._window = w
 
     def _do_hide(self):
-        if self._window is not None:
+        for attr in ("_window", "_blocker"):
+            w = getattr(self, attr)
+            if w is None:
+                continue
             try:
-                self._window.destroy()
+                w.destroy()
             except Exception:
-                pass
-            self._window = None
-        if self._blocker is not None:
-            try:
-                self._blocker.destroy()
-            except Exception:
-                pass
-            self._blocker = None
+                logger.debug("hide %s.destroy failed", attr, exc_info=True)
+            setattr(self, attr, None)

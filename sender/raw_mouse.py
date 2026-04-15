@@ -223,15 +223,12 @@ def run(is_running, on_delta):
                 user32.TranslateMessage(byref(msg))
                 user32.DispatchMessageW(byref(msg))
     finally:
-        try:
-            user32.KillTimer(hwnd, _FLUSH_TIMER_ID)
-        except Exception:
-            pass
-        try:
-            user32.DestroyWindow(hwnd)
-        except Exception:
-            pass
-        try:
-            winmm.timeEndPeriod(1)
-        except Exception:
-            pass
+        for action, fn in (
+            ("KillTimer", lambda: user32.KillTimer(hwnd, _FLUSH_TIMER_ID)),
+            ("DestroyWindow", lambda: user32.DestroyWindow(hwnd)),
+            ("timeEndPeriod", lambda: winmm.timeEndPeriod(1)),
+        ):
+            try:
+                fn()
+            except Exception:
+                print(f"[RawMouse] {action} failed (ignored)")
