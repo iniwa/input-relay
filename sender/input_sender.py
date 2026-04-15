@@ -233,6 +233,33 @@ def _emit(msg, monitor=True):
         enqueue_monitor(msg)
 
 
+# --- Input source timestamps (for Main/Sub active detection by secretary-bot) ---
+# kbd/mouse と gamepad を独立に追跡して、/api/status で公開する。
+# キーボード/マウス: リモートモード中は Sub PC 側で消費される
+# ゲームパッド: 物理的に Main PC 接続なので常に Main 側操作
+_last_kbd_mouse_ts: float = 0.0
+_last_gamepad_ts: float = 0.0
+_input_ts_lock = threading.Lock()
+
+
+def _touch_kbd_mouse():
+    with _input_ts_lock:
+        global _last_kbd_mouse_ts
+        _last_kbd_mouse_ts = time.time()
+
+
+def _touch_gamepad():
+    with _input_ts_lock:
+        global _last_gamepad_ts
+        _last_gamepad_ts = time.time()
+
+
+def _emit_gamepad(msg, monitor=True):
+    """Gamepad 経路の _emit ラッパー。emit と同時に gamepad タイムスタンプを更新する。"""
+    _touch_gamepad()
+    _emit(msg, monitor=monitor)
+
+
 def _get_vk(key):
     """Extract Windows virtual key code from a pynput key."""
     vk = getattr(key, 'vk', None)
@@ -246,6 +273,7 @@ def _get_vk(key):
 
 
 def on_press(key):
+    _touch_kbd_mouse()
     # Scroll Lock toggles remote control mode
     if key == keyboard.Key.scroll_lock:
         _set_remote_mode(not remote.mode)
@@ -275,6 +303,7 @@ def on_press(key):
 
 
 def on_release(key):
+    _touch_kbd_mouse()
     key_str = key_to_str(key)
     vk = _get_vk(key)
     with _pressed_keys_lock:
@@ -285,6 +314,7 @@ def on_release(key):
 # --- Mouse movement (Raw Input API, 60Hz throttled) ---
 def _on_raw_mouse_delta(dx, dy):
     """raw_mouse モジュールから 16ms 間隔で呼ばれる。"""
+    _touch_kbd_mouse()
     # リモートモード中はマウスを Sub PC 側の物理マウスで操作するため
     # マウス関連イベントは転送しない。
     if remote.mode:
@@ -304,6 +334,7 @@ def raw_mouse_loop():
 
 # --- Mouse listener ---
 def on_mouse_click(x, y, button, pressed):
+    _touch_kbd_mouse()
     # リモートモード中はマウスイベントを Sub PC へ転送しない（Sub PC 側は
     # 物理マウスで操作する運用のため）。OS レベルの suppress は pynput /
     # ll_mouse_hook 側で引き続き掛かる。
@@ -324,6 +355,7 @@ def on_mouse_click(x, y, button, pressed):
 
 
 def on_mouse_scroll(x, y, dx, dy):
+    _touch_kbd_mouse()
     if remote.mode:
         return
     _emit(json.dumps({
@@ -376,12 +408,19 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
                 "selected": _gamepad.selected_id() if _gamepad else 0,
             })
         elif path == "/api/status":
+            with _input_ts_lock:
+                kbd_ts = _last_kbd_mouse_ts
+                gp_ts = _last_gamepad_ts
             self._send_json({
                 "ws_status": ws_status,
                 "host": config.get("host", ""),
                 "port": config.get("port", 8888),
                 "selected_controller": _gamepad.selected_id() if _gamepad else 0,
                 "remote_mode": remote.mode,
+                # Multi-PC activity detection 用フィールド（未観測は 0.0）
+                "last_kbd_mouse_ts": kbd_ts,
+                "last_gamepad_ts": gp_ts,
+                "server_time": time.time(),
             })
         else:
             self.send_error(404)
@@ -691,7 +730,7 @@ async def main():
     raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
     raw_mouse_thread.start()
 
-    _gamepad = gamepad_mod.Gamepad(emit_callback=_emit, is_running=lambda: running)
+    _gamepad = gamepad_mod.Gamepad(emit_callback=_emit_gamepad, is_running=lambda: running)
     gp_thread = threading.Thread(target=_gamepad.run, daemon=True)
     gp_thread.start()
 
