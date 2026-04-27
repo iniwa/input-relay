@@ -2383,6 +2383,8 @@ init();
 // ===== Debug =====
 let debugWs = null;
 let debugPressedKeys = new Set();
+let debugReleaseTimers = {};
+const DEBUG_AFTERGLOW_MS = 300;
 
 function connectDebug() {
   if (debugWs && debugWs.readyState < 2) return;
@@ -2429,9 +2431,26 @@ function appendDebugLog(data) {
 }
 
 function updateDebugPressed(data) {
-  if (data.type === 'key_down') debugPressedKeys.add(data.key);
-  else if (data.type === 'key_up') debugPressedKeys.delete(data.key);
-  else return;
+  if (data.type === 'key_down') {
+    // 同キーのリリース予約が残っていればキャンセル（連打時の取りこぼし防止）
+    if (debugReleaseTimers[data.key]) {
+      clearTimeout(debugReleaseTimers[data.key]);
+      delete debugReleaseTimers[data.key];
+    }
+    debugPressedKeys.add(data.key);
+    renderDebugPressed();
+  } else if (data.type === 'key_up') {
+    // 即削除せずアフターグローで残す（タップが見落とされないよう最低 DEBUG_AFTERGLOW_MS 表示）
+    if (debugReleaseTimers[data.key]) clearTimeout(debugReleaseTimers[data.key]);
+    debugReleaseTimers[data.key] = setTimeout(() => {
+      debugPressedKeys.delete(data.key);
+      delete debugReleaseTimers[data.key];
+      renderDebugPressed();
+    }, DEBUG_AFTERGLOW_MS);
+  }
+}
+
+function renderDebugPressed() {
   const el = document.getElementById('debug-pressed');
   el.textContent = debugPressedKeys.size > 0
     ? '押下中: ' + [...debugPressedKeys].join('  |  ')
@@ -2441,6 +2460,8 @@ function updateDebugPressed(data) {
 function clearDebugLog() {
   document.getElementById('debug-log').innerHTML = '';
   debugPressedKeys.clear();
+  Object.values(debugReleaseTimers).forEach(clearTimeout);
+  debugReleaseTimers = {};
   document.getElementById('debug-pressed').textContent = '押下中: なし';
 }
 </script>
