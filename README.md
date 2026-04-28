@@ -98,9 +98,9 @@ python receiver/input_server.py --http-port 8081 --standalone
 
 ## モード切替
 
-- ゲームパッドを接続してボタンを押すと、オーバーレイが自動的にレバーレスモードに切り替わる
 - **F12** キー（デフォルト）で手動切替: `keyboard` → `leverless` → `controller` の順に循環
 - 切替キーは設定 GUI の Sender タブで変更可能
+- 設定 GUI のプレビュー上部のボタンからも切替可能
 
 ## リモートコントロール（2PC モードのみ）
 

@@ -1006,11 +1006,7 @@ function connect() {
       config = data.data;
       buildLayout();
     } else if (data.type === 'mode_switch') {
-      if (data.key === 'gamepad') {
-        mode = 'leverless';
-      } else {
-        mode = data.key;
-      }
+      mode = data.key;
       pressedKeys.clear();
       dirState = { left: false, right: false, up: false, down: false };
       axisState = {};
