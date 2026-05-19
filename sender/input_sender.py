@@ -9,20 +9,19 @@ import json
 import logging
 import os
 import sys
-import time
 import threading
+import time
 from ctypes import wintypes
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-import websockets
-from pynput import keyboard, mouse
-
 import gamepad as gamepad_mod
+import ll_mouse_hook
 import overlay_window
 import raw_mouse
-import ll_mouse_hook
+import websockets
+from pynput import keyboard, mouse
 
 # Logging — silent except のトレースを掴めるよう default は INFO、
 # INPUT_RELAY_DEBUG=1 で DEBUG (silenced exception を表示)。
@@ -31,6 +30,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("sender")
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 # --- Tunables ---
 DEFAULT_HTTP_PORT = 8082
@@ -46,6 +50,8 @@ GUI_PATH = Path(__file__).parent / "sender_gui.html"
 _CONFIG_DEFAULTS = {
     "host": "localhost",
     "port": 8888,
+    "gamepad_enabled": False,
+    "raw_mouse_enabled": False,
     "toggleKey": "f12",
     "local_name": "",
     "target_name": "Sub PC",
@@ -374,12 +380,15 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", len(body))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", len(body))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            logger.debug("HTTP client disconnected before JSON response completed")
 
     def _send_html(self, path):
         try:
@@ -389,6 +398,8 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", len(content))
             self.end_headers()
             self.wfile.write(content)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            logger.debug("HTTP client disconnected before HTML response completed")
         except FileNotFoundError:
             self.send_error(404)
 
@@ -404,6 +415,7 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
             self._send_json(config)
         elif path == "/api/controllers":
             self._send_json({
+                "enabled": bool(config.get("gamepad_enabled", False)),
                 "controllers": _gamepad.info() if _gamepad else [],
                 "selected": _gamepad.selected_id() if _gamepad else 0,
             })
@@ -546,9 +558,23 @@ async def monitor_broadcaster():
 
 
 async def start_monitor_ws(port=DEFAULT_MONITOR_PORT):
-    async with websockets.serve(monitor_handler, "0.0.0.0", port):
-        print(f"[Monitor] WebSocket at ws://localhost:{port}/")
-        await monitor_broadcaster()
+    while running:
+        try:
+            async with websockets.serve(monitor_handler, "0.0.0.0", port):
+                print(f"[Monitor] WebSocket at ws://localhost:{port}/")
+                await monitor_broadcaster()
+        except OSError as e:
+            logger.warning(
+                "monitor websocket bind failed on port %s: %s; retrying in %.1fs",
+                port, e, RECONNECT_BACKOFF,
+            )
+            await asyncio.sleep(RECONNECT_BACKOFF)
+        except Exception as e:
+            logger.exception(
+                "monitor websocket crashed: %s; retrying in %.1fs",
+                e, RECONNECT_BACKOFF,
+            )
+            await asyncio.sleep(RECONNECT_BACKOFF)
 
 
 # --- Reconnect logic ---
@@ -634,7 +660,7 @@ async def sender(host, port):
             try:
                 await asyncio.wait_for(_reconnect_event.wait(), timeout=RECONNECT_BACKOFF)
                 _reconnect_event.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
         except websockets.ConnectionClosed:
             ws_connection = None
@@ -649,7 +675,7 @@ async def sender(host, port):
             try:
                 await asyncio.wait_for(_reconnect_event.wait(), timeout=RECONNECT_BACKOFF)
                 _reconnect_event.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
         # Safety: if disconnected while remote mode is on, disable it
@@ -711,6 +737,23 @@ async def _remote_toggle_handler():
         }))
 
 
+async def _run_forever(name, coro_factory):
+    """Run a long-lived task and restart it if it exits unexpectedly."""
+    while running:
+        try:
+            await coro_factory()
+            if running:
+                logger.warning("%s task exited unexpectedly; restarting in %.1fs",
+                               name, RECONNECT_BACKOFF)
+                await asyncio.sleep(RECONNECT_BACKOFF)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception("%s task crashed: %s; restarting in %.1fs",
+                             name, e, RECONNECT_BACKOFF)
+            await asyncio.sleep(RECONNECT_BACKOFF)
+
+
 async def main():
     global _loop, _monitor_queue
     global _kb_listener, _mouse_listener, _gamepad
@@ -727,12 +770,18 @@ async def main():
     # 低レベルマウスフックを起動（suppress フラグで動作切替）
     _ll_mouse_blocker.start()
 
-    raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
-    raw_mouse_thread.start()
+    if config.get("raw_mouse_enabled", False):
+        raw_mouse_thread = threading.Thread(target=raw_mouse_loop, daemon=True)
+        raw_mouse_thread.start()
+    else:
+        print("[RawMouse] Disabled by config")
 
-    _gamepad = gamepad_mod.Gamepad(emit_callback=_emit_gamepad, is_running=lambda: running)
-    gp_thread = threading.Thread(target=_gamepad.run, daemon=True)
-    gp_thread.start()
+    if config.get("gamepad_enabled", False):
+        _gamepad = gamepad_mod.Gamepad(emit_callback=_emit_gamepad, is_running=lambda: running)
+        gp_thread = threading.Thread(target=_gamepad.run, daemon=True)
+        gp_thread.start()
+    else:
+        print("[Gamepad] Disabled by config")
 
     # Start HTTP server for GUI (ThreadingHTTPServer handles concurrent requests)
     http_port = config.get("http_port", DEFAULT_HTTP_PORT)
@@ -742,9 +791,9 @@ async def main():
     # Start monitor WebSocket, sender, and remote toggle handler concurrently
     monitor_port = config.get("monitor_port", DEFAULT_MONITOR_PORT)
     await asyncio.gather(
-        sender(config["host"], config["port"]),
-        start_monitor_ws(monitor_port),
-        _remote_toggle_handler(),
+        _run_forever("sender", lambda: sender(config["host"], config["port"])),
+        _run_forever("monitor_ws", lambda: start_monitor_ws(monitor_port)),
+        _run_forever("remote_toggle", _remote_toggle_handler),
     )
 
 
@@ -774,6 +823,9 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n[Sender] Stopping...")
+    except BaseException:
+        logger.exception("sender process crashed")
+        raise
     finally:
         _shutdown_local_resources()
         print("[Sender] Stopped.")
