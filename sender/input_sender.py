@@ -50,8 +50,8 @@ GUI_PATH = Path(__file__).parent / "sender_gui.html"
 _CONFIG_DEFAULTS = {
     "host": "localhost",
     "port": 8888,
-    "gamepad_enabled": False,
-    "raw_mouse_enabled": False,
+    "gamepad_enabled": True,
+    "raw_mouse_enabled": True,
     "toggleKey": "f12",
     "local_name": "",
     "target_name": "Sub PC",
@@ -464,6 +464,10 @@ class SenderHTTPHandler(BaseHTTPRequestHandler):
         prev_port = config.get("port")
         config["host"] = data.get("host", prev_host)
         config["port"] = int(data.get("port", prev_port or 8888))
+        if "gamepad_enabled" in data:
+            config["gamepad_enabled"] = bool(data["gamepad_enabled"])
+        if "raw_mouse_enabled" in data:
+            config["raw_mouse_enabled"] = bool(data["raw_mouse_enabled"])
         # Remote overlay 関連項目の更新
         if "local_name" in data:
             config["local_name"] = str(data.get("local_name") or "")
