@@ -840,7 +840,22 @@ function handleInput(data) {
     if (dirName) dirState[dirName] = false;
   }
 
-  recordCurrentState();
+  if (!data.skipHistory) recordCurrentState();
+}
+
+function handleMouseScroll(data) {
+  const pulses = [];
+  if ((data.dy || 0) > 0) pulses.push('mouse_scroll_up');
+  if ((data.dy || 0) < 0) pulses.push('mouse_scroll_down');
+  if (!pulses.length) return;
+
+  const releaseDelay = Math.max(config?.afterglowMs ?? 50, 50);
+  pulses.forEach(key => {
+    handleInput({ type: 'key_down', key, source: 'mouse', timestamp: data.timestamp });
+    setTimeout(() => {
+      handleInput({ type: 'key_up', key, source: 'mouse', timestamp: Date.now() / 1000, skipHistory: true });
+    }, releaseDelay);
+  });
 }
 
 function handleAxisUpdate(data) {
@@ -1015,6 +1030,7 @@ function connect() {
       const delay = config?.displayDelayMs || 0;
       const process = () => {
         if (data.type === 'mouse_move') { handleMouseMove(data); return; }
+        if (data.type === 'mouse_scroll') { handleMouseScroll(data); return; }
         if (data.type === 'axis_update') handleAxisUpdate(data);
         else handleInput(data);
       };

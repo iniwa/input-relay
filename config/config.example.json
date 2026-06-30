@@ -4,7 +4,9 @@
       { "key": "w", "label": "W", "row": 1, "col": 2 },
       { "key": "a", "label": "A", "row": 2, "col": 1 },
       { "key": "s", "label": "S", "row": 2, "col": 2 },
-      { "key": "d", "label": "D", "row": 2, "col": 3 }
+      { "key": "d", "label": "D", "row": 2, "col": 3 },
+      { "key": "mouse_scroll_up", "label": "Wheel Up", "row": 0, "col": 4 },
+      { "key": "mouse_scroll_down", "label": "Wheel Down", "row": 1, "col": 4 }
     ]
   },
   "leverless": {

@@ -511,6 +511,8 @@
     <button class="btn-add" onclick="addKbKey('mouse_left')">+ マウス左</button>
     <button class="btn-add" onclick="addKbKey('mouse_right')">+ マウス右</button>
     <button class="btn-add" onclick="addKbKey('mouse_middle')">+ マウス中</button>
+    <button class="btn-add" onclick="addKbKey('mouse_scroll_up')">+ スクロール上</button>
+    <button class="btn-add" onclick="addKbKey('mouse_scroll_down')">+ スクロール下</button>
     <button class="btn-add" onclick="addKbKey('mouse_x1')">+ サイド後(X1)</button>
     <button class="btn-add" onclick="addKbKey('mouse_x2')">+ サイド前(X2)</button>
     <button class="btn-save" onclick="saveOverlayConfig()">保存</button>
@@ -1772,7 +1774,15 @@ function renderKbKeys() {
 function addKbKey(mouseKey) {
   if (!overlayConfig.keyboard) overlayConfig.keyboard = { displayKeys: [] };
   if (mouseKey) {
-    const labelMap = { mouse_left: 'LClick', mouse_right: 'RClick', mouse_middle: 'MClick', mouse_x1: 'Side1', mouse_x2: 'Side2' };
+    const labelMap = {
+      mouse_left: 'LClick',
+      mouse_right: 'RClick',
+      mouse_middle: 'MClick',
+      mouse_scroll_up: 'Wheel Up',
+      mouse_scroll_down: 'Wheel Down',
+      mouse_x1: 'Side1',
+      mouse_x2: 'Side2',
+    };
     overlayConfig.keyboard.displayKeys.push({ key: mouseKey, label: labelMap[mouseKey] || mouseKey, row: 0, col: 0, width: 1 });
   } else {
     overlayConfig.keyboard.displayKeys.push({ key: '', label: '', row: 0, col: 0, width: 1 });
@@ -2418,10 +2428,12 @@ function appendDebugLog(data) {
   const ts = data.timestamp
     ? new Date(data.timestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false })
     : '--:--:--';
-  const colors = { key_down: '#4f4', key_up: '#f66', mode_switch: '#ff4', axis_update: '#88f' };
+  const colors = { key_down: '#4f4', key_up: '#f66', mode_switch: '#ff4', axis_update: '#88f', mouse_scroll: '#6cf' };
   entry.style.color = colors[data.type] || '#ccc';
   if (data.type === 'axis_update') {
     entry.textContent = `[${ts}] axis_update | axis: ${data.axis} val: ${(data.value ?? 0).toFixed(3)}`;
+  } else if (data.type === 'mouse_scroll') {
+    entry.textContent = `[${ts}] mouse_scroll | dx: ${data.dx || 0} dy: ${data.dy || 0} | src: ${data.source || '-'}`;
   } else {
     entry.textContent = `[${ts}] ${data.type.padEnd(12)} | key: ${String(data.key).padEnd(16)} | src: ${data.source || '-'}`;
   }
@@ -2431,7 +2443,21 @@ function appendDebugLog(data) {
 }
 
 function updateDebugPressed(data) {
-  if (data.type === 'key_down') {
+  if (data.type === 'mouse_scroll') {
+    const keys = [];
+    if ((data.dy || 0) > 0) keys.push('mouse_scroll_up');
+    if ((data.dy || 0) < 0) keys.push('mouse_scroll_down');
+    keys.forEach(key => {
+      if (debugReleaseTimers[key]) clearTimeout(debugReleaseTimers[key]);
+      debugPressedKeys.add(key);
+      debugReleaseTimers[key] = setTimeout(() => {
+        debugPressedKeys.delete(key);
+        delete debugReleaseTimers[key];
+        renderDebugPressed();
+      }, DEBUG_AFTERGLOW_MS);
+    });
+    renderDebugPressed();
+  } else if (data.type === 'key_down') {
     // 同キーのリリース予約が残っていればキャンセル（連打時の取りこぼし防止）
     if (debugReleaseTimers[data.key]) {
       clearTimeout(debugReleaseTimers[data.key]);
