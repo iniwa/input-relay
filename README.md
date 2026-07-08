@@ -153,13 +153,21 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 │   ├── *.example.json                # 設定テンプレート
 ├── sender/
 │   ├── input_sender.py               # 入力キャプチャ + WebSocket 送信
+│   ├── gamepad.py                    # ゲームパッド polling (60Hz)
+│   ├── raw_mouse.py                  # Raw Input マウス移動取得 (60Hz flush)
+│   ├── ll_mouse_hook.py              # WH_MOUSE_LL フック (リモート中のボタン抑止)
+│   ├── overlay_window.py             # リモートモード中の画面端オーバーレイ
 │   └── sender_gui.html               # Sender 設定画面
 ├── receiver/
 │   ├── input_server.py               # WebSocket サーバー + HTTP サーバー
 │   ├── input_injector.py             # リモコン用入力注入
 │   ├── standalone_capture.py         # 単独モード用入力キャプチャ
 │   ├── overlay.html                  # OBS 用オーバーレイ
+│   ├── shared_render.js              # overlay / 設定 GUI 共通描画
 │   └── config_gui.html               # Web 設定画面
+├── docs/
+│   ├── api.md                        # JSON API リファレンス
+│   └── improvements.md               # 改善チェックリスト
 └── startup/
     ├── setup_startup_sender.bat      # Sender 自動起動登録
     └── setup_startup_receiver.bat    # Receiver 自動起動登録
