@@ -162,7 +162,6 @@ receiver 経由で sender 側設定ファイルを読み書きする。**sender 
 {
   "host": "192.168.1.211",
   "port": 8888,
-  "toggleKey": "f12",
   "local_name": "Main PC",
   "target_name": "Sub PC",
   "remote_overlay": {
@@ -345,15 +344,14 @@ JSON でない or パース不可能なメッセージは無視される。
   "port": 8888,
   "gamepad_enabled": true,
   "raw_mouse_enabled": true,
-  "toggleKey": "f12",
   "local_name": "Main PC",
   "target_name": "Sub PC",
   "remote_overlay": { "enabled": true, "position": "top-left" }
 }
 ```
 
-> `toggleKey` はデフォルト値として残っているが、参照するコードは無い
-> (F12 モード切替機能は撤去済みの残骸)。
+> 旧 `toggleKey` キー (F12 モード切替、撤去済み) はデフォルトから削除済み。
+> 既存の `sender_config.json` に残っていても無視される。
 
 ### 4.3 `POST /api/config`
 

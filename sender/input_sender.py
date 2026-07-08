@@ -52,7 +52,6 @@ _CONFIG_DEFAULTS = {
     "port": 8888,
     "gamepad_enabled": True,
     "raw_mouse_enabled": True,
-    "toggleKey": "f12",
     "local_name": "",
     "target_name": "Sub PC",
     "remote_overlay": {
