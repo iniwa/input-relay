@@ -1,6 +1,6 @@
 # input-relay JSON API リファレンス
 
-> 調査日: 2026-04-15
+> 調査日: 2026-04-15（最終更新: 2026-07-08）
 > 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/gamepad.py`
 
 外部管理ツール (secretary-bot 等) から LAN 経由で input-relay の設定 CRUD と状態取得を行うための仕様。実装と乖離しないよう、実ソースから確認した挙動のみを記載する。
@@ -343,6 +343,8 @@ JSON でない or パース不可能なメッセージは無視される。
 {
   "host": "192.168.1.211",
   "port": 8888,
+  "gamepad_enabled": true,
+  "raw_mouse_enabled": true,
   "toggleKey": "f12",
   "local_name": "Main PC",
   "target_name": "Sub PC",
@@ -350,9 +352,12 @@ JSON でない or パース不可能なメッセージは無視される。
 }
 ```
 
+> `toggleKey` はデフォルト値として残っているが、参照するコードは無い
+> (F12 モード切替機能は撤去済みの残骸)。
+
 ### 4.3 `POST /api/config`
 
-sender 設定を更新する。受け付けるキー: `host`, `port`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される (sender 自身のポート `http_port` / `monitor_port` の変更にはこの API は使えない。`sender_config.json` を直接編集するか、receiver の `POST /api/sender-config` で全置換した上で `POST /api/restart` する必要がある)。
+sender 設定を更新する。受け付けるキー: `host`, `port`, `gamepad_enabled`, `raw_mouse_enabled`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される (`gamepad_enabled` / `raw_mouse_enabled` は保存のみで、キャプチャスレッドの起動/停止への反映は sender 再起動時)。 (sender 自身のポート `http_port` / `monitor_port` の変更にはこの API は使えない。`sender_config.json` を直接編集するか、receiver の `POST /api/sender-config` で全置換した上で `POST /api/restart` する必要がある)。
 
 リクエストボディ例:
 ```json
@@ -380,9 +385,14 @@ sender の現在状態。
   "host": "192.168.1.211",
   "port": 8888,
   "selected_controller": 0,
-  "remote_mode": false
+  "remote_mode": false,
+  "last_kbd_mouse_ts": 1712990000.1, // キーボード/マウス最終入力の UNIX 秒 (未観測は 0.0)
+  "last_gamepad_ts": 1712990000.1,   // ゲームパッド最終入力の UNIX 秒 (未観測は 0.0)
+  "server_time": 1712990000.2        // sender 側の現在時刻 (ts との差分計算用)
 }
 ```
+
+`last_*_ts` は secretary-bot 等が Main/Sub どちらを操作中かを判定するためのフィールド。リモートモード中のキーボード/マウス入力は Sub PC 側で消費されるが、ゲームパッドは物理的に Main PC 接続のため常に Main 側操作を意味する。
 
 ### 4.5 `GET /api/controllers`
 
@@ -391,6 +401,7 @@ sender の現在状態。
 レスポンス:
 ```json
 {
+  "enabled": true,                   // gamepad_enabled 設定値
   "controllers": [ { "id": 0, "name": "Xbox Controller", /* ... */ } ],
   "selected": 0
 }

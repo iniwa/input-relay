@@ -87,20 +87,26 @@ python receiver/input_server.py --http-port 8081 --standalone
 
 | タブ | 内容 |
 |------|------|
-| **Sender** | 接続先 IP、ポート、モード切替キー |
-| **Keyboard** | キーボードモードで表示するキーの追加・削除・位置変更 |
-| **Leverless** | 方向ボタン・アクションボタンのマッピング編集 |
-| **Controller** | コントローラーレイアウトの設定 |
+| **Sender (Main PC)** | 接続先 IP・ポート、ショートカット一覧、表示モード切替 |
+| **Keyboard レイアウト** | キーボードモードで表示するキーの追加・削除・位置変更 |
+| **Leverless レイアウト** | 方向ボタン・アクションボタンのマッピング編集 |
+| **Controller レイアウト** | コントローラーレイアウトの設定 |
 | **入力履歴** | 最大表示数、アイドルタイムアウト |
+| **マウス軌跡** | マウストレイル表示の設定（モード別 ON/OFF 等） |
+| **レイアウト調整** | プレビュー上でのキーのドラッグ配置編集、レイアウトプリセット |
 | **デバッグ** | 送信中のボタンをリアルタイム確認 |
 
 ページ下部にリアルタイムプレビューあり。
 
 ## モード切替
 
-- **F12** キー（デフォルト）で手動切替: `keyboard` → `leverless` → `controller` の順に循環
-- 切替キーは設定 GUI の Sender タブで変更可能
-- 設定 GUI のプレビュー上部のボタンからも切替可能
+表示モード（`keyboard` / `leverless` / `controller`）の切替は設定 GUI から行う。
+
+- Sender タブの「オーバーレイ表示モード切替」ボタン
+- プレビュー上部のモードボタン
+- 外部ツールからは `POST /api/mode-switch`（`docs/api.md` 参照）
+
+キーボードショートカットによる切替（旧 F12 循環切替）は撤去済み。
 
 ## リモートコントロール（2PC モードのみ）
 
@@ -173,8 +179,17 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
     └── setup_startup_receiver.bat    # Receiver 自動起動登録
 ```
 
-設定ファイルは `config/` に保存され、初回起動時に自動生成される。
+設定ファイルは `config/` に保存され、設定 GUI から保存したときに生成される
+（ファイルが無い間はデフォルト値で動作する）。
 手動で作成する場合は `.example.json` をコピーしてリネーム。
+
+## 開発ワークフロー
+
+- 設計判断と handoff（`docs/handoffs/`）作成は Codex が担当（`AGENTS.md`）、
+  実装・検証は Claude Code が担当（`CLAUDE.md`）。
+- 改善候補は `docs/improvements.md` で管理（チェックを入れた項目から着手）。
+- JSON API の仕様は `docs/api.md`（ルート変更時に同期する）。
+- 検証コマンド: `python -m py_compile sender/*.py receiver/*.py`
 
 ## 依存パッケージ
 
