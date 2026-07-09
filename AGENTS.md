@@ -42,17 +42,24 @@ Codex is responsible for:
 Claude Code is responsible for:
 - executing clear, scoped handoffs
 - following the project `CLAUDE.md`
-- running in auto mode (automatic model selection) and executing the coding
-  work at Sonnet level
+- running via `claude -p --model sonnet --permission-mode auto` from the repo
+  root (Sonnet 5 / current Sonnet alias, non-interactive print mode)
 - returning design questions to Codex instead of deciding locally
 - running requested verification where possible and reporting results
 
 Codex may implement small or design-sensitive changes directly.
 
-## Claude Code Model Policy
-Claude Code normally runs in auto mode (automatic model selection), and coding
-work is expected to be executed at Sonnet level. Codex owns design; Sonnet
-owns implementation.
+## Claude Code Invocation / Model Policy
+Claude Code is delegated by Codex with this standard command shape from
+`D:/Git/input-relay`:
+
+```powershell
+claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"
+```
+
+`--model sonnet` is the Sonnet 5 / current Sonnet alias for implementation
+work. `--permission-mode auto` is the normal execution mode. Codex owns
+design; Sonnet owns implementation.
 
 Consequences for Codex when writing handoffs:
 - Write each handoff so a Sonnet implementer can complete it without design
@@ -93,9 +100,10 @@ Rules for Claude Code execution:
 1. Codex reads project context, `AGENTS.md`, `CLAUDE.md`, and relevant files.
 2. Codex writes a concrete handoff file under `docs/handoffs/`
    (create the directory if it does not exist).
-3. The user gives that file path to Claude Code.
-4. Claude Code (auto mode, Sonnet-level execution) reads the handoff file,
-   implements, and reports back.
+3. Codex invokes Claude Code non-interactively from the repo root, normally:
+   `claude -p --model sonnet --permission-mode auto "<handoff path + task>"`
+4. Claude Code (Sonnet 5 via `--model sonnet`, permission auto) reads the
+   handoff file, implements, and reports back.
 5. Codex reviews the report and/or diff.
 
 Handoffs must state: Goal / Background / Files To Inspect / Files To Edit /
@@ -108,13 +116,13 @@ Constraints / Non Goals / Verification / Expected Report
 - Any real `config/*.json`, credentials, or local settings touched?
 - Resident-stability check: does the change add unbounded state, per-event
   blocking work, or an unthrottled event source?
-- Did verification run (`python -m py_compile`, manual checks named in the
-  handoff), and are blocked checks explained?
+- Did verification run (`python -m py_compile`, `python -m unittest discover -s tests`, `python -m ruff check .` where applicable, and manual checks named in the handoff),
+  and are blocked checks explained?
 - Does any discovery need to become a new decision here or in `docs/*.md`?
 
 ## Knowledge Persistence
-- `docs/api.md`: JSON API reference (keep in sync with the dispatch tables
-  in `receiver/input_server.py` and the sender HTTP handler).
+- `docs/api.md`: JSON API reference (keep in sync with receiver dispatch
+  tables, `sender/http_api.py`, and `sender/monitor_ws.py`).
 - `docs/improvements.md`: improvement checklist (check-to-implement flow).
 - `docs/handoffs/`: active Codex handoffs only.
 

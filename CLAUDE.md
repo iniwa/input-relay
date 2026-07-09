@@ -9,6 +9,13 @@ review criteria — read it before non-trivial work.
 - Keep reports concise and factual.
 
 ## Codex / Claude Code Workflow
+- Codex normally delegates implementation by running this command from
+  `D:/Git/input-relay`:
+
+  ```powershell
+  claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"
+  ```
+
 - Codex handoffs live under `docs/handoffs/`; when a handoff path is
   provided, read it before editing and follow it first, then this file,
   then surrounding project patterns.
@@ -17,8 +24,8 @@ review criteria — read it before non-trivial work.
 - Small, clearly-scoped fixes may be requested directly without a handoff.
 
 ## Model / Subagent Policy
-- Claude Code normally runs in auto mode (automatic model selection). Do not
-  depend on a specific model tier being active.
+- Standard execution is Sonnet 5 via `--model sonnet` with
+  `--permission-mode auto`; treat `sonnet` as the current Sonnet alias.
 - Codex handoffs are written for Sonnet-level execution: goal, file scope,
   constraints, non-goals, and verification are explicit enough that
   implementation requires no design judgment.
@@ -40,8 +47,8 @@ review criteria — read it before non-trivial work.
 - Standalone 1-PC mode: `input_server.py --standalone` with
   `standalone_capture.py`.
 - `docs/api.md` is the authoritative API reference; update it when changing
-  routes (dispatch tables in `input_server.py`, `SenderHTTPHandler` in
-  `input_sender.py`).
+  routes (dispatch tables in `receiver/input_server.py`, `SenderHTTPHandler` in
+  `sender/http_api.py`, monitor WS in `sender/monitor_ws.py`).
 
 ## Coding Rules
 - Resident stability first: no unbounded queues/dicts tied to uptime, no
@@ -62,11 +69,12 @@ Do not edit or delete unless explicitly requested:
 - `startup/` registration state on the PCs
 
 ## Verification
-- `python -m py_compile sender/*.py receiver/*.py`
-- No test suite yet (see `docs/improvements.md`). If a check needs a live
-  sender/receiver, name which PC it runs on and report it as blocked if it
-  cannot run.
-- `git diff --check` for documentation-only changes.
+- `python -m py_compile sender/*.py receiver/*.py input_common/*.py`
+- `python -m unittest discover -s tests`
+- `python -m ruff check .` when ruff is available in the local dev environment
+- `git diff --check`
+- If a check needs a live sender/receiver, name which PC it runs on and report
+  it as blocked if it cannot run.
 
 ## Git / Deployment
 - Workspace: `D:/Git/input-relay`. The only push remote is

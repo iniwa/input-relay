@@ -4,7 +4,8 @@
 （初回調査: 2026-07-08 / 再調査: 2026-07-08 二巡目）。
 
 **運用方法**: 着手したい項目にチェック `[x]` を入れる → Codex が handoff を作成し、
-Claude Code（Sonnet 実務・auto モード）が実装する。handoff を挟むまでもない
+Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
+実装する。handoff を挟むまでもない
 小粒な項目は Claude Code に直接依頼してもよい。
 実装完了した項目は「完了アーカイブ」へ移動する。
 
