@@ -212,13 +212,27 @@ def key_to_str(key):
     return str(key)
 
 
-event_queue: asyncio.Queue = asyncio.Queue()  # receiver 向けイベントキュー
+# receiver 向けイベントキュー。切断中に溜まった古いイベントは表示価値が
+# ほぼ無いため、上限を設けて常駐メモリを有界に保つ（満杯時は最古を破棄）。
+_EVENT_QUEUE_MAXSIZE = 500
+event_queue: asyncio.Queue = asyncio.Queue(maxsize=_EVENT_QUEUE_MAXSIZE)
+
+
+def _enqueue_event_on_loop(data):
+    """asyncio loop スレッドで実行: 満杯なら最古を捨ててから最新を積む。"""
+    if event_queue.full():
+        try:
+            event_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    event_queue.put_nowait(data)
 
 
 def _post_event(data):
-    """Thread-safe: enqueue an event for the sender ws send loop."""
-    if _loop is not None:
-        _loop.call_soon_threadsafe(event_queue.put_nowait, data)
+    """Thread-safe: enqueue an event for the sender ws send loop.
+    receiver 未接続中は表示できないイベントなので積まずに捨てる。"""
+    if _loop is not None and ws_status == "connected":
+        _loop.call_soon_threadsafe(_enqueue_event_on_loop, data)
 
 
 def enqueue_monitor(data):

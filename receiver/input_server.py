@@ -26,6 +26,7 @@ logger = logging.getLogger("receiver")
 
 browser_clients = set()
 _browser_lock = asyncio.Lock()
+_BROWSER_SEND_TIMEOUT = 1.0  # seconds; a stalled client must not block others/RC injection
 sender_ws = None
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
@@ -120,13 +121,26 @@ def _client_label(handler):
 
 
 async def broadcast_to_browsers(message):
+    """Send message to each browser client independently.
+
+    A slow/stalled client must not delay delivery to the others; failed
+    or timed-out clients are dropped from browser_clients rather than
+    retried.
+    """
     async with _browser_lock:
         clients = list(browser_clients)
-    if clients:
-        await asyncio.gather(
-            *[c.send(message) for c in clients],
-            return_exceptions=True,
-        )
+    if not clients:
+        return
+    dead = []
+    for c in clients:
+        try:
+            await asyncio.wait_for(c.send(message), timeout=_BROWSER_SEND_TIMEOUT)
+        except Exception:
+            dead.append(c)
+    if dead:
+        async with _browser_lock:
+            for c in dead:
+                browser_clients.discard(c)
 
 
 def _broadcast_change(kind, extra):
@@ -367,6 +381,18 @@ class OverlayHandler(BaseHTTPRequestHandler):
     def _read_body(self):
         return self.rfile.read(int(self.headers.get("Content-Length", 0)))
 
+    def _resolve_static_path(self, path):
+        """OVERLAY_DIR 配下に解決できないパス（相対脱出・絶対パス・不正パス）は
+        None を返す。呼び出し側はこれを 404 として扱う。"""
+        try:
+            base = OVERLAY_DIR.resolve()
+            candidate = (OVERLAY_DIR / path).resolve()
+        except (OSError, ValueError):
+            return None
+        if not candidate.is_relative_to(base):
+            return None
+        return candidate
+
     def do_GET(self):
         if self._dispatch(_GET_ROUTES):
             return
@@ -379,8 +405,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
         # Serve static files
         if not path:
             path = "config_gui.html"
-        file_path = OVERLAY_DIR / path
-        if file_path.exists() and file_path.is_file():
+        file_path = self._resolve_static_path(path)
+        if file_path is not None and file_path.exists() and file_path.is_file():
             content = file_path.read_bytes()
             ct = "text/html"
             if path.endswith(".json"):
@@ -515,13 +541,7 @@ async def sender_handler(ws):
                 continue
 
             # Broadcast to browsers (existing behavior)
-            async with _browser_lock:
-                clients = list(browser_clients)
-            if clients:
-                await asyncio.gather(
-                    *[client.send(msg) for client in clients],
-                    return_exceptions=True,
-                )
+            await broadcast_to_browsers(msg)
 
             # Remote control: inject as OS input
             with _rc_lock:
