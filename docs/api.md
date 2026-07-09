@@ -1,7 +1,8 @@
 # input-relay JSON API リファレンス
 
-> 調査日: 2026-04-15（最終更新: 2026-07-08）
-> 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/gamepad.py`
+> 調査日: 2026-04-15（最終更新: 2026-07-09）
+> 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/http_api.py`,
+> `sender/monitor_ws.py`, `sender/gamepad.py`
 
 外部管理ツール (secretary-bot 等) から LAN 経由で input-relay の設定 CRUD と状態取得を行うための仕様。実装と乖離しないよう、実ソースから確認した挙動のみを記載する。
 
@@ -327,7 +328,7 @@ JSON でない or パース不可能なメッセージは無視される。
 
 ## 4. Sender HTTP API (port 8082)
 
-エントリポイント: `SenderHTTPHandler` (`sender/input_sender.py`)。CORS は全許可 (`Access-Control-Allow-Origin: *`).
+エントリポイント: `SenderHTTPHandler` (`sender/http_api.py`)。CORS は全許可 (`Access-Control-Allow-Origin: *`).
 
 ### 4.1 `GET /` , `GET /index.html`
 
@@ -442,7 +443,7 @@ sender プロセスを `os.execv` で再起動。
 
 ## 5. Sender Monitor WebSocket (port 8083)
 
-エントリポイント: `monitor_handler` (`sender/input_sender.py`)。
+エントリポイント: `MonitorServer` (`sender/monitor_ws.py`)。
 
 - 任意のクライアントが接続できる。**サーバー → クライアントの一方向ブロードキャスト**。クライアントから送られたメッセージは破棄される。
 - sender がキャプチャした全入力イベント (キーボード, マウスクリック/移動/スクロール, ゲームパッドボタン/ハット/軸) を実時間で配信する。

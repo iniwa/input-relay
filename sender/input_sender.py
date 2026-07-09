@@ -12,12 +12,12 @@ import sys
 import threading
 import time
 from ctypes import wintypes
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
 
 import gamepad as gamepad_mod
+import http_api
 import ll_mouse_hook
+import monitor_ws
 import overlay_window
 import raw_mouse
 import websockets
@@ -40,8 +40,6 @@ except Exception:
 DEFAULT_HTTP_PORT = 8082
 DEFAULT_MONITOR_PORT = 8083
 RECONNECT_BACKOFF = 3.0           # 接続失敗時の待機 (秒)
-REFRESH_WAIT = 0.3                # GUI からの refresh 後 gamepad 反映待ち (秒)
-RESTART_DELAY = 0.5               # GUI からの restart 要求遅延 (秒)
 
 # Load config
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "sender_config.json"
@@ -122,9 +120,8 @@ _ll_mouse_blocker = ll_mouse_hook.LowLevelMouseBlocker()
 # Gamepad — capture loop と HTTP API の両方からアクセスされるためクラスで保護
 _gamepad = None  # gamepad_mod.Gamepad, created in main()
 
-# Monitor: async queue for broadcasting to WebSocket clients
-_monitor_queue = None  # asyncio.Queue, created in main()
-_monitor_clients = set()  # managed only from asyncio thread
+# Monitor: WebSocket broadcaster, created in main()
+_monitor: monitor_ws.MonitorServer | None = None
 
 # Modifier key mapping: normalize left/right variants to base name
 _MODIFIER_MAP = {
@@ -237,12 +234,8 @@ def _post_event(data):
 
 def enqueue_monitor(data):
     """Thread-safe: push data to the monitor broadcast queue."""
-    if _loop is not None and _monitor_queue is not None:
-        try:
-            _loop.call_soon_threadsafe(_monitor_queue.put_nowait, data)
-        except RuntimeError:
-            # event loop が close 済み (shutdown 中など) は黙殺
-            logger.debug("monitor queue dropped: loop closed", exc_info=True)
+    if _monitor is not None:
+        _monitor.enqueue(data)
 
 
 def _emit(msg, monitor=True):
@@ -386,212 +379,45 @@ def on_mouse_scroll(x, y, dx, dy):
     }))
 
 
-# --- HTTP Server for GUI ---
-class SenderHTTPHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass  # suppress access logs
-
-    def _send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        try:
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", len(body))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(body)
-        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
-            logger.debug("HTTP client disconnected before JSON response completed")
-
-    def _send_html(self, path):
-        try:
-            content = path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", len(content))
-            self.end_headers()
-            self.wfile.write(content)
-        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
-            logger.debug("HTTP client disconnected before HTML response completed")
-        except FileNotFoundError:
-            self.send_error(404)
-
-    def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length)) if length else {}
-
-    def do_GET(self):
-        path = urlparse(self.path).path
-        if path == "/" or path == "/index.html":
-            self._send_html(GUI_PATH)
-        elif path == "/api/config":
-            self._send_json(config)
-        elif path == "/api/controllers":
-            self._send_json({
-                "enabled": bool(config.get("gamepad_enabled", False)),
-                "controllers": _gamepad.info() if _gamepad else [],
-                "selected": _gamepad.selected_id() if _gamepad else 0,
-            })
-        elif path == "/api/status":
-            with _input_ts_lock:
-                kbd_ts = _last_kbd_mouse_ts
-                gp_ts = _last_gamepad_ts
-            self._send_json({
-                "ws_status": ws_status,
-                "host": config.get("host", ""),
-                "port": config.get("port", 8888),
-                "selected_controller": _gamepad.selected_id() if _gamepad else 0,
-                "remote_mode": remote.mode,
-                # Multi-PC activity detection 用フィールド（未観測は 0.0）
-                "last_kbd_mouse_ts": kbd_ts,
-                "last_gamepad_ts": gp_ts,
-                "server_time": time.time(),
-            })
-        else:
-            self.send_error(404)
-
-    def do_POST(self):
-        path = urlparse(self.path).path
-        if path == "/api/config":
-            self._handle_save_config()
-        elif path == "/api/select-controller":
-            self._handle_select_controller()
-        elif path == "/api/refresh-controllers":
-            self._handle_refresh_controllers()
-        elif path == "/api/restart":
-            self._handle_restart()
-        else:
-            self.send_error(404)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def _handle_save_config(self):
-        global config
-        data = self._read_body()
-        prev_host = config.get("host")
-        prev_port = config.get("port")
-        config["host"] = data.get("host", prev_host)
-        config["port"] = int(data.get("port", prev_port or 8888))
-        if "gamepad_enabled" in data:
-            config["gamepad_enabled"] = bool(data["gamepad_enabled"])
-        if "raw_mouse_enabled" in data:
-            config["raw_mouse_enabled"] = bool(data["raw_mouse_enabled"])
-        # Remote overlay 関連項目の更新
-        if "local_name" in data:
-            config["local_name"] = str(data.get("local_name") or "")
-        if "target_name" in data:
-            config["target_name"] = str(data.get("target_name") or "")
-        if "remote_overlay" in data and isinstance(data["remote_overlay"], dict):
-            overlay = config.get("remote_overlay") or {}
-            if not isinstance(overlay, dict):
-                overlay = {}
-            incoming = data["remote_overlay"]
-            if "enabled" in incoming:
-                overlay["enabled"] = bool(incoming["enabled"])
-            if "position" in incoming:
-                pos = str(incoming["position"])
-                if pos in _OVERLAY_POSITIONS:
-                    overlay["position"] = pos
-            config["remote_overlay"] = overlay
-        save_config(config)
-        # host/port が変化したときだけ再接続をトリガ
-        if (config["host"] != prev_host or config["port"] != prev_port) and _loop is not None:
-            _loop.call_soon_threadsafe(_trigger_reconnect)
-        self._send_json({"ok": True})
-
-    def _handle_select_controller(self):
-        data = self._read_body()
-        cid = int(data.get("id", 0))
-        if _gamepad is not None:
-            _gamepad.select(cid)
-            name = next(
-                (c["name"] for c in _gamepad.info() if c["id"] == cid),
-                "Unknown",
-            )
-        else:
-            name = "Unknown"
-        print(f"[GUI] Controller selected: {name} (ID: {cid})")
-        self._send_json({"ok": True, "id": cid, "name": name})
-
-    def _handle_refresh_controllers(self):
-        if _gamepad is not None:
-            _gamepad.request_refresh()
-            time.sleep(REFRESH_WAIT)
-            controllers = _gamepad.info()
-            sel = _gamepad.selected_id()
-        else:
-            controllers, sel = [], 0
-        self._send_json({
-            "controllers": controllers,
-            "selected": sel,
-            "count": len(controllers),
-        })
-
-    def _handle_restart(self):
-        self._send_json({"ok": True, "message": "Restarting..."})
-        print("[Sender] Restart requested via GUI. Restarting process...")
-        # Use os.execv to replace current process with a fresh instance
-        threading.Timer(RESTART_DELAY, lambda: os.execv(sys.executable, [sys.executable] + sys.argv)).start()
+# --- HTTP API context (accessors for sender/http_api.py) ---
+def _get_config():
+    return config
 
 
-def start_http_server(port=DEFAULT_HTTP_PORT):
-    server = ThreadingHTTPServer(("0.0.0.0", port), SenderHTTPHandler)
-    print(f"[HTTP] GUI server at http://localhost:{port}/")
-    server.serve_forever()
+def _get_gamepad():
+    return _gamepad
 
 
-# --- Monitor WebSocket: single async broadcaster ---
-async def monitor_handler(websocket):
-    _monitor_clients.add(websocket)
-    try:
-        async for _ in websocket:
-            pass  # monitor is send-only from server side
-    except websockets.ConnectionClosed:
-        pass
-    finally:
-        _monitor_clients.discard(websocket)
+def _get_ws_status():
+    return ws_status
 
 
-async def monitor_broadcaster():
-    """Single task that reads from _monitor_queue and fans out to all clients."""
-    while running:
-        data = await _monitor_queue.get()
-        if not _monitor_clients:
-            continue
-        dead = []
-        for ws in list(_monitor_clients):
-            try:
-                await ws.send(data)
-            except Exception:
-                # Closed / broken / send failed — drop this client
-                dead.append(ws)
-        for ws in dead:
-            _monitor_clients.discard(ws)
+def _get_remote_mode():
+    return remote.mode
 
 
-async def start_monitor_ws(port=DEFAULT_MONITOR_PORT):
-    while running:
-        try:
-            async with websockets.serve(monitor_handler, "0.0.0.0", port):
-                print(f"[Monitor] WebSocket at ws://localhost:{port}/")
-                await monitor_broadcaster()
-        except OSError as e:
-            logger.warning(
-                "monitor websocket bind failed on port %s: %s; retrying in %.1fs",
-                port, e, RECONNECT_BACKOFF,
-            )
-            await asyncio.sleep(RECONNECT_BACKOFF)
-        except Exception as e:
-            logger.exception(
-                "monitor websocket crashed: %s; retrying in %.1fs",
-                e, RECONNECT_BACKOFF,
-            )
-            await asyncio.sleep(RECONNECT_BACKOFF)
+def _get_input_timestamps():
+    with _input_ts_lock:
+        return _last_kbd_mouse_ts, _last_gamepad_ts
+
+
+def _schedule_reconnect():
+    if _loop is not None:
+        _loop.call_soon_threadsafe(_trigger_reconnect)
+
+
+def _build_http_context():
+    return http_api.SenderContext(
+        gui_path=GUI_PATH,
+        get_config=_get_config,
+        save_config=save_config,
+        trigger_reconnect=_schedule_reconnect,
+        get_gamepad=_get_gamepad,
+        valid_overlay_positions=_OVERLAY_POSITIONS,
+        get_ws_status=_get_ws_status,
+        get_remote_mode=_get_remote_mode,
+        get_input_timestamps=_get_input_timestamps,
+    )
 
 
 # --- Reconnect logic ---
@@ -772,10 +598,10 @@ async def _run_forever(name, coro_factory):
 
 
 async def main():
-    global _loop, _monitor_queue
+    global _loop, _monitor
     global _kb_listener, _mouse_listener, _gamepad
     _loop = asyncio.get_event_loop()
-    _monitor_queue = asyncio.Queue()
+    _monitor = monitor_ws.MonitorServer(_loop, lambda: running)
     remote.toggle_event = asyncio.Event()
 
     _kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
@@ -802,14 +628,17 @@ async def main():
 
     # Start HTTP server for GUI (ThreadingHTTPServer handles concurrent requests)
     http_port = config.get("http_port", DEFAULT_HTTP_PORT)
-    http_thread = threading.Thread(target=start_http_server, args=(http_port,), daemon=True)
+    http_ctx = _build_http_context()
+    http_thread = threading.Thread(
+        target=http_api.start_http_server, args=(http_ctx, http_port), daemon=True,
+    )
     http_thread.start()
 
     # Start monitor WebSocket, sender, and remote toggle handler concurrently
     monitor_port = config.get("monitor_port", DEFAULT_MONITOR_PORT)
     await asyncio.gather(
         _run_forever("sender", lambda: sender(config["host"], config["port"])),
-        _run_forever("monitor_ws", lambda: start_monitor_ws(monitor_port)),
+        _run_forever("monitor_ws", lambda: _monitor.serve(monitor_port)),
         _run_forever("remote_toggle", _remote_toggle_handler),
     )
 
