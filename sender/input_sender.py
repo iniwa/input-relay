@@ -14,6 +14,10 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
+
 import gamepad as gamepad_mod
 import http_api
 import ll_mouse_hook
@@ -22,6 +26,9 @@ import overlay_window
 import raw_mouse
 import websockets
 from pynput import keyboard, mouse
+
+from input_common.input_events import get_vk as _get_vk
+from input_common.input_events import key_to_str, make_event
 
 # Logging — silent except のトレースを掴めるよう default は INFO、
 # INPUT_RELAY_DEBUG=1 で DEBUG (silenced exception を表示)。
@@ -123,19 +130,6 @@ _gamepad = None  # gamepad_mod.Gamepad, created in main()
 # Monitor: WebSocket broadcaster, created in main()
 _monitor: monitor_ws.MonitorServer | None = None
 
-# Modifier key mapping: normalize left/right variants to base name
-_MODIFIER_MAP = {
-    keyboard.Key.shift: 'shift',
-    keyboard.Key.shift_l: 'shift',
-    keyboard.Key.shift_r: 'shift',
-    keyboard.Key.ctrl: 'ctrl',
-    keyboard.Key.ctrl_l: 'ctrl',
-    keyboard.Key.ctrl_r: 'ctrl',
-    keyboard.Key.alt: 'alt',
-    keyboard.Key.alt_l: 'alt',
-    keyboard.Key.alt_r: 'alt',
-}
-
 
 def _freeze_cursor():
     """Lock the cursor to its current position using ClipCursor."""
@@ -173,40 +167,6 @@ def _set_remote_mode(enabled):
     # receiver / monitor への通知のみ非同期で
     if _loop is not None and remote.toggle_event is not None:
         _loop.call_soon_threadsafe(remote.toggle_event.set)
-
-
-def make_event(event_type, key, source="keyboard", vk=None):
-    ev = {
-        "type": event_type,
-        "key": key,
-        "source": source,
-        "timestamp": time.time(),
-    }
-    if vk is not None:
-        ev["vk"] = vk
-    return json.dumps(ev)
-
-
-def key_to_str(key):
-    # Check modifier map first
-    if key in _MODIFIER_MAP:
-        return _MODIFIER_MAP[key]
-    # Use vk (virtual key code) to get modifier-independent key name
-    # This prevents Shift+1 becoming '!' or Ctrl+C becoming '\x03'
-    vk = getattr(key, 'vk', None)
-    if vk is not None:
-        if 0x30 <= vk <= 0x39:  # 0-9
-            return chr(vk)
-        if 0x41 <= vk <= 0x5A:  # A-Z
-            return chr(vk).lower()
-    if hasattr(key, "char") and key.char is not None:
-        return key.char.lower()
-    if hasattr(key, "name"):
-        return key.name
-    # Fallback: use VK code as identifier (e.g. Japanese IME keys)
-    if vk is not None:
-        return f"vk_{vk}"
-    return str(key)
 
 
 # receiver 向けイベントキュー。切断中に溜まった古いイベントは表示価値が
@@ -270,18 +230,6 @@ def _emit_gamepad(msg, monitor=True):
     """Gamepad 経路の _emit ラッパー。emit と同時に gamepad タイムスタンプを更新する。"""
     _touch_gamepad()
     _emit(msg, monitor=monitor)
-
-
-def _get_vk(key):
-    """Extract Windows virtual key code from a pynput key."""
-    vk = getattr(key, 'vk', None)
-    if vk is not None:
-        return vk
-    # pynput Key enum members have a value with vk
-    value = getattr(key, 'value', None)
-    if value is not None:
-        return getattr(value, 'vk', None)
-    return None
 
 
 def on_press(key):

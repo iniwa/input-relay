@@ -1,0 +1,17 @@
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Keep default rule set (pyflakes + a small pycodestyle subset); no
+# project-specific rule additions to avoid unrelated churn.
+
+[tool.ruff.lint.per-file-ignores]
+# These files intentionally bootstrap sys.path with the repo root before
+# importing input_common as direct scripts (see 2026-07-09 handoff);
+# E402 here is by design, not lint debt.
+"receiver/standalone_capture.py" = ["E402"]
+"sender/input_sender.py" = ["E402"]
+"sender/gamepad.py" = ["E402"]
+# Tests insert receiver/ or the repo root into sys.path locally before
+# importing the module under test (no packaging is added for this repo).
+"tests/*.py" = ["E402"]

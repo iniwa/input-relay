@@ -167,7 +167,6 @@ class OverlayManager:
         # SetWindowPos(HWND_TOPMOST) で強制的に最前面へ置く。
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.windll.user32
             SM_XVIRTUALSCREEN = 76

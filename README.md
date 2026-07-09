@@ -190,6 +190,9 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 - 改善候補は `docs/improvements.md` で管理（チェックを入れた項目から着手）。
 - JSON API の仕様は `docs/api.md`（ルート変更時に同期する）。
 - 検証コマンド: `python -m py_compile sender/*.py receiver/*.py`
+- テスト: `python -m unittest discover -s tests`
+- Lint（開発用ツール。実行時依存には含まれず、手元に `ruff` がある場合のみ）:
+  `python -m ruff check .`
 
 ## 依存パッケージ
 
