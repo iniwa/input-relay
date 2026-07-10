@@ -1,6 +1,6 @@
 # Input Display (OBS Overlay)
 
-キーボード/ゲームパッド入力を OBS のブラウザソースとして表示するツール。
+キーボード/ゲームパッド/マウス入力を OBS のブラウザソースとして表示するツール。
 SF6 配信向けに、レバーレス/Hitbox レイアウトと入力履歴表示に対応。
 
 ## 動作モード
@@ -41,6 +41,9 @@ Main PC (sender)              Sub PC (receiver)
 
 - 自動で `git pull`、依存パッケージのインストールを行い、サーバーを起動
 - 設定 GUI がブラウザで自動的に開く
+- ゲームパッドも使う場合、現行 launcher では `pygame` を導入しないため、初回のみ
+  `python -m pip install pygame` を実行する（launcher 側の修正候補は
+  `docs/improvements.md` で管理）
 
 コマンドラインの場合:
 
@@ -87,7 +90,7 @@ python receiver/input_server.py --http-port 8081 --standalone
 
 | タブ | 内容 |
 |------|------|
-| **Sender (Main PC)** | 接続先 IP・ポート、ショートカット一覧、表示モード切替 |
+| **Sender 設定（Receiver 側）** | Receiver PC にある sender 設定ファイルの host・port |
 | **Keyboard レイアウト** | キーボードモードで表示するキーの追加・削除・位置変更 |
 | **Leverless レイアウト** | 方向ボタン・アクションボタンのマッピング編集 |
 | **Controller レイアウト** | コントローラーレイアウトの設定 |
@@ -97,6 +100,18 @@ python receiver/input_server.py --http-port 8081 --standalone
 | **デバッグ** | 送信中のボタンをリアルタイム確認 |
 
 ページ下部にリアルタイムプレビューあり。
+
+2PC モードでは Main PC と Sub PC の設定ファイルは別物。Receiver GUI の
+「Sender 設定」は Sub PC ローカルのコピーだけを更新し、Main PC で動く sender には
+反映されない。実行中 sender の接続先、コントローラー、リモート表示を変更する場合は、
+Main PC で `http://localhost:8082/` の Sender GUI を使う。
+
+### Sender GUI（Main PC）
+
+`http://localhost:8082/` では receiver 接続先、コントローラー選択、リモート表示、
+接続状態、入力モニタ、sender 再起動を操作できる。既定以外の HTTP/monitor port は
+サーバー本体では設定可能だが、launcher の firewall・自動ブラウザ起動と入力モニタが
+まだ追従しないため、通常は 8082/8083 を使う。
 
 ## モード切替
 
@@ -148,6 +163,7 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 ## ファイル構成
 
 ```
+├── pyproject.toml                    # ruff 開発設定
 ├── start_standalone.bat              # 単独モード起動用
 ├── start_sender.bat                  # 2PC: Main PC 起動用
 ├── start_receiver.bat                # 2PC: Sub PC 起動用
@@ -157,9 +173,14 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 │   ├── presets.json                  # 表示プリセット
 │   ├── layout_presets.json           # レイアウトプリセット
 │   ├── *.example.json                # 設定テンプレート
+├── input_common/
+│   ├── input_events.py               # キー正規化・共通イベント生成
+│   └── gamepad.py                    # 共有ゲームパッド polling (60Hz)
 ├── sender/
 │   ├── input_sender.py               # 入力キャプチャ + WebSocket 送信
-│   ├── gamepad.py                    # ゲームパッド polling (60Hz)
+│   ├── gamepad.py                    # 共有 Gamepad への互換 wrapper
+│   ├── http_api.py                   # Sender GUI / JSON API
+│   ├── monitor_ws.py                 # 入力監視 WebSocket
 │   ├── raw_mouse.py                  # Raw Input マウス移動取得 (60Hz flush)
 │   ├── ll_mouse_hook.py              # WH_MOUSE_LL フック (リモート中のボタン抑止)
 │   ├── overlay_window.py             # リモートモード中の画面端オーバーレイ
@@ -171,15 +192,18 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 │   ├── overlay.html                  # OBS 用オーバーレイ
 │   ├── shared_render.js              # overlay / 設定 GUI 共通描画
 │   └── config_gui.html               # Web 設定画面
+├── tests/                             # unittest（live hook/server は起動しない）
 ├── docs/
 │   ├── api.md                        # JSON API リファレンス
-│   └── improvements.md               # 改善チェックリスト
+│   ├── improvements.md               # 改善チェックリスト
+│   └── handoffs/
+│       └── archive/                   # レビュー済み handoff
 └── startup/
     ├── setup_startup_sender.bat      # Sender 自動起動登録
     └── setup_startup_receiver.bat    # Receiver 自動起動登録
 ```
 
-設定ファイルは `config/` に保存され、設定 GUI から保存したときに生成される
+設定ファイルは各 PC の `config/` に保存され、設定 GUI から保存したときに生成される
 （ファイルが無い間はデフォルト値で動作する）。
 手動で作成する場合は `.example.json` をコピーしてリネーム。
 
@@ -189,14 +213,16 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
   実装・検証は Claude Code が担当（`CLAUDE.md`）。
 - 改善候補は `docs/improvements.md` で管理（チェックを入れた項目から着手）。
 - JSON API の仕様は `docs/api.md`（ルート変更時に同期する）。
-- 検証コマンド: `python -m py_compile sender/*.py receiver/*.py`
+- 検証コマンド: `python -m py_compile sender/*.py receiver/*.py input_common/*.py`
 - テスト: `python -m unittest discover -s tests`
 - Lint（開発用ツール。実行時依存には含まれず、手元に `ruff` がある場合のみ）:
   `python -m ruff check .`
 
 ## 依存パッケージ
 
-bat ファイルが自動インストールするため手動でのインストールは不要。
+各 bat ファイルが実行時依存を自動インストールする。例外として、現行の standalone
+launcher は `pygame` を導入しないため、単独モードでゲームパッドを使う場合だけ手動で
+追加する必要がある。
 
 | モード | パッケージ |
 |--------|-----------|

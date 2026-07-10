@@ -1,8 +1,8 @@
 # input-relay JSON API リファレンス
 
-> 調査日: 2026-04-15（最終更新: 2026-07-09）
+> 調査日: 2026-04-15（最終更新: 2026-07-11）
 > 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/http_api.py`,
-> `sender/monitor_ws.py`, `sender/gamepad.py`
+> `sender/monitor_ws.py`, `input_common/gamepad.py`
 
 外部管理ツール (secretary-bot 等) から LAN 経由で input-relay の設定 CRUD と状態取得を行うための仕様。実装と乖離しないよう、実ソースから確認した挙動のみを記載する。
 
@@ -19,9 +19,15 @@ input-relay は以下の 2 プロセスで構成される (単独モードでは
 
 - すべて `0.0.0.0` で listen し、LAN 公開前提。
 - **認証はない。** LAN 内信頼ゾーンでのみ使用すること。
-- HTTP は `ThreadingHTTPServer` で動くため複数クライアントから同時アクセス可能。設定書き込みは内部で単一ロック (`_config_io_lock`) で直列化される。
+- HTTP は `ThreadingHTTPServer` で動くため複数クライアントから同時アクセス可能。
+  個々の設定ファイル I/O は `_config_io_lock` で保護されるが、preset/layout-preset の
+  read-modify-write 全体は未だ transaction ではない。対応完了までは同じ種類の更新を
+  client 側で直列化する (`docs/improvements.md` 参照)。
 - receiver のポートはコマンドライン引数 (`--port` `--http-port`) で変更可能。
 - sender のポートは `sender_config.json` の `http_port` / `monitor_port` キーで変更可能 (キーが無ければ既定の 8082 / 8083)。
+- ただし現行 `start_sender.bat` の firewall / ブラウザ自動起動と Sender GUI の
+  monitor 接続先は既定 port 固定。通常運用では 8082 / 8083 を使う
+  (`docs/improvements.md` に end-to-end 対応を記録済み)。
 - 環境変数 `INPUT_RELAY_DEBUG=1` を付けて起動すると receiver / sender 両方で `logging` が DEBUG レベルになり、内部で握り潰している例外のスタックトレースが出力される (障害調査用)。
 
 ### 設定ファイルの場所
@@ -33,7 +39,7 @@ receiver から見て `../config/` 配下:
 | `config/config.json` | オーバーレイ表示設定全般 (キーボード/レバーレス/コントローラのレイアウト, 履歴設定など) |
 | `config/presets.json` | プリセット (`{ keyboard: {...}, leverless: {...}, controller: {...} }`) |
 | `config/layout_presets.json` | レイアウト+履歴のみのプリセット (同じ 3 タイプ別) |
-| `config/sender_config.json` | sender 接続先・トグルキー・リモートオーバーレイ設定・自身の HTTP/Monitor ポート |
+| `config/sender_config.json` | sender 接続先・入力機能・リモートオーバーレイ設定・自身の HTTP/Monitor ポート |
 
 ---
 
@@ -148,9 +154,13 @@ receiver から見て `../config/` 配下:
 
 レスポンス: `{ "ok": true }`
 
-### 2.4 sender 設定 (sender_config.json)
+### 2.4 receiver-local sender 設定 (sender_config.json)
 
-receiver 経由で sender 側設定ファイルを読み書きする。**sender プロセス自体には反映されない** (sender はファイル監視していない)。反映には sender の `POST /api/restart` か OS 側からの再起動が必要。
+receiver が動く PC の `config/sender_config.json` を読み書きするファイル API。
+通常の 2PC 構成では Main PC と Sub PC は別 workspace のため、**この API で変更する
+Sub PC 側ファイルは Main PC の sender プロセスには反映されない**。実行中 sender の
+設定変更には Main PC の Sender HTTP API (port 8082) を使う。API 互換性のため endpoint
+自体は維持しているが、Main PC sender の live-control API として扱わないこと。
 
 #### `GET /api/sender-config`
 
@@ -178,7 +188,8 @@ receiver 経由で sender 側設定ファイルを読み書きする。**sender 
 
 ブラウザに `config_change` (kind=`sender_config`, data) を通知。
 
-> `http_port` / `monitor_port` を変えた場合、sender プロセス側に反映するには `POST http://<sender>:8082/api/restart` で再起動する必要がある。
+> この POST は全置換であり、部分更新ではない。同じ workspace で sender も動かす特殊な
+> 構成では再起動後に反映されるが、通常の 2PC 構成では Main PC 側ファイルを別途変更する。
 
 ### 2.5 強制リフレッシュ
 
@@ -356,7 +367,7 @@ JSON でない or パース不可能なメッセージは無視される。
 
 ### 4.3 `POST /api/config`
 
-sender 設定を更新する。受け付けるキー: `host`, `port`, `gamepad_enabled`, `raw_mouse_enabled`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される (`gamepad_enabled` / `raw_mouse_enabled` は保存のみで、キャプチャスレッドの起動/停止への反映は sender 再起動時)。 (sender 自身のポート `http_port` / `monitor_port` の変更にはこの API は使えない。`sender_config.json` を直接編集するか、receiver の `POST /api/sender-config` で全置換した上で `POST /api/restart` する必要がある)。
+sender 設定を更新する。受け付けるキー: `host`, `port`, `gamepad_enabled`, `raw_mouse_enabled`, `local_name`, `target_name`, `remote_overlay.enabled`, `remote_overlay.position`。それ以外のキーは無視される (`gamepad_enabled` / `raw_mouse_enabled` は保存のみで、キャプチャスレッドの起動/停止への反映は sender 再起動時)。sender 自身の `http_port` / `monitor_port` はこの API では変更できないため、Main PC 側の `sender_config.json` を直接編集して `POST /api/restart` する。
 
 リクエストボディ例:
 ```json
@@ -422,7 +433,8 @@ sender の現在状態。
 
 ### 4.7 `POST /api/refresh-controllers`
 
-コントローラを再スキャン (`sender/gamepad.py` の `Gamepad.request_refresh()` に再スキャン要求を送り、約 0.3 秒待ってから結果を返す)。
+コントローラを再スキャン (`input_common/gamepad.py` の
+`Gamepad.request_refresh()` に再スキャン要求を送り、約 0.3 秒待ってから結果を返す)。
 
 レスポンス:
 ```json
@@ -576,9 +588,12 @@ Overlay 表示では、縦スクロールを一瞬だけ押下される表示用
 
 ### 7.1 設定変更を反映させる
 
-1. `POST /api/config` (または presets/layout-presets/sender-config) で書き込み。
+1. `POST /api/config` (または presets/layout-presets) で書き込み。
 2. receiver 側で自動的に `/browser` WebSocket 経由でブラウザに通知されるため、追加操作は不要。
-3. ただし sender 設定 (`sender_config.json`) を変えても sender プロセスには反映されない。`POST http://<sender>:8082/api/restart` で sender を再起動する。
+3. Main PC sender の live 設定は `POST http://<sender>:8082/api/config` で変更する。
+   `http_port` / `monitor_port` など同 API が受け付けない項目は Main PC 側の
+   `sender_config.json` を変更して sender を再起動する。receiver の
+   `/api/sender-config` は Sub PC ローカルのファイル API であり、Main PC には転送しない。
 
 ### 7.2 変更を監視する
 

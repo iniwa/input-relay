@@ -50,6 +50,31 @@ Claude Code is responsible for:
 Codex may implement small or design-sensitive changes directly.
 
 ## Claude Code Invocation / Model Policy
+### Common Model Policy (2026-07-10)
+
+This common policy overrides any earlier generic statement in this section
+about coordinator-model selection or model roles.
+
+- Handoff design and post-implementation review use Codex GPT-5.6 Sol with
+  reasoning medium. Everyday light Codex work may use the GPT-5.6 Terra
+  default; do not use Terra for handoff design.
+- Claude Code Sonnet 5 (`--model sonnet`) is the implementation executor at
+  effort medium. Handoffs must leave no design judgment to the executor.
+- Fable 5 is not part of the normal flow. Use it only as a medium-effort
+  second opinion for difficult design decisions. GPT-5.6 Luna is not used in
+  this workflow.
+- Subagents are optional only for clearly parallel mechanical work. They must
+  inherit the handoff constraints and must not change design intent, expand
+  scope, add dependencies, alter build/deploy/external exposure, or touch
+  secrets.
+- On Windows, put Japanese or other non-ASCII handoff bodies in a UTF-8
+  handoff file. Keep the delegated command line ASCII-only (handoff path plus
+  a short English instruction); do not pipe the prompt body through Windows
+  PowerShell 5.1. When running `codex exec` in the background, close stdin
+  with `$null |` to prevent an EOF wait.
+
+Detailed verification rationale is recorded in
+`D:/Git/CLAUDEmdStrage/docs/decisions/2026-07-10-model-selection-gpt56-fable5.md`.
 Claude Code is delegated by Codex with this standard command shape from
 `D:/Git/input-relay`:
 
@@ -95,6 +120,9 @@ Rules for Claude Code execution:
   on disconnect, and mouse suppression behavior must be preserved.
 - User-local settings live in `config/*.json` (gitignored; `*.example.json`
   is the committed template). Never commit real config files.
+- In 2PC mode, each PC owns its local config. The live sender reads the Main
+  PC's `config/sender_config.json`; a receiver-side copy cannot configure the
+  Main PC process. Use the sender HTTP GUI/API for live sender changes.
 
 ## Handoff Workflow
 1. Codex reads project context, `AGENTS.md`, `CLAUDE.md`, and relevant files.
@@ -105,6 +133,8 @@ Rules for Claude Code execution:
 4. Claude Code (Sonnet 5 via `--model sonnet`, permission auto) reads the
    handoff file, implements, and reports back.
 5. Codex reviews the report and/or diff.
+6. After review is complete, move the handoff to `docs/handoffs/archive/`;
+   keep only active handoffs at the `docs/handoffs/` root.
 
 Handoffs must state: Goal / Background / Files To Inspect / Files To Edit /
 Constraints / Non Goals / Verification / Expected Report
@@ -124,7 +154,8 @@ Constraints / Non Goals / Verification / Expected Report
 - `docs/api.md`: JSON API reference (keep in sync with receiver dispatch
   tables, `sender/http_api.py`, and `sender/monitor_ws.py`).
 - `docs/improvements.md`: improvement checklist (check-to-implement flow).
-- `docs/handoffs/`: active Codex handoffs only.
+- `docs/handoffs/`: active Codex handoffs at the directory root; completed
+  handoffs under `docs/handoffs/archive/`.
 
 ## Decision Log
 
@@ -151,3 +182,24 @@ Do Not Change Casually:
 - Remote layout, submodule consumption model, ports (8081 receiver HTTP,
   8888 receiver WS, 8082 sender HTTP, 8083 sender monitor WS — see
   `docs/api.md` for authoritative values).
+
+### 2026-07-11: Per-PC sender config ownership
+
+Context:
+- Main PC and Sub PC use separate workspaces and separate gitignored config
+  files. The receiver's `/api/sender-config` endpoint writes only the Sub PC
+  workspace, while the resident sender reads the Main PC workspace.
+
+Decision:
+- The Main PC sender GUI/API (default port 8082) is the live configuration
+  path for the sender process.
+- Receiver-local `sender_config.json` data must be described as a local copy,
+  not as live control of the Main PC sender.
+- Keep the receiver `/api/sender-config` contract for compatibility until a
+  dedicated handoff checks all external consumers; do not add implicit config
+  synchronization between PCs.
+
+Constraints Introduced:
+- A sender config UI must identify which PC/file it changes.
+- Removing or repurposing `/api/sender-config` requires API review and a
+  `docs/api.md` update.

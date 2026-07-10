@@ -19,6 +19,8 @@ review criteria — read it before non-trivial work.
 - Codex handoffs live under `docs/handoffs/`; when a handoff path is
   provided, read it before editing and follow it first, then this file,
   then surrounding project patterns.
+- Active handoffs are stored at the `docs/handoffs/` root. After Codex review,
+  completed handoffs move to `docs/handoffs/archive/`.
 - If the task is ambiguous, requires changing documented design intent, or
   needs files outside the handoff, stop and report before editing.
 - Small, clearly-scoped fixes may be requested directly without a handoff.
@@ -46,6 +48,9 @@ review criteria — read it before non-trivial work.
     input injection (`input_injector.py`).
 - Standalone 1-PC mode: `input_server.py --standalone` with
   `standalone_capture.py`.
+- In normal 2PC operation the Main and Sub PCs have separate local config
+  files. The live sender reads the Main PC's `sender_config.json`; receiver
+  `/api/sender-config` only reads/writes the receiver PC's local copy.
 - `docs/api.md` is the authoritative API reference; update it when changing
   routes (dispatch tables in `receiver/input_server.py`, `SenderHTTPHandler` in
   `sender/http_api.py`, monitor WS in `sender/monitor_ws.py`).
@@ -89,6 +94,8 @@ Do not edit or delete unless explicitly requested:
 ## Knowledge Persistence
 - `docs/api.md`: JSON API reference (keep in sync with routes).
 - `docs/improvements.md`: improvement checklist (check-to-implement flow).
+- `docs/handoffs/archive/`: completed handoffs retained for implementation
+  history; do not treat them as active work.
 - Durable design decisions go to `AGENTS.md` (Codex reviews them).
 
 ## Tooling
