@@ -661,6 +661,33 @@ function histCfg() {
   return h[mode] || {};
 }
 
+function clearInputState() {
+  pressedKeys.clear();
+  dirState = { left: false, right: false, up: false, down: false };
+  axisState = {};
+}
+
+function resetDisplayedInput() {
+  // Applied on sender-disconnect 'input_reset': must not rebuild the layout
+  // or add history entries, only bring the currently displayed input state
+  // back to neutral.
+  displayDelayTimers.forEach(clearTimeout);
+  displayDelayTimers = [];
+  Object.entries(afterglowTimers).forEach(([key, id]) => {
+    clearTimeout(id);
+    const el = keyElements[key];
+    if (el) el.classList.remove('afterglow');
+  });
+  afterglowTimers = {};
+  pressedKeys.forEach(key => {
+    const el = keyElements[key];
+    if (el) el.classList.remove('active');
+  });
+  clearInputState();
+  updateStickVisuals();
+  trailPoints = [];
+}
+
 function buildLayout() {
   if (!config) return;
   displayDelayTimers.forEach(clearTimeout);
@@ -673,9 +700,7 @@ function buildLayout() {
     buildKeyboard(config);
   }
   document.getElementById('mode-label').textContent = mode.toUpperCase();
-  pressedKeys.clear();
-  dirState = { left: false, right: false, up: false, down: false };
-  axisState = {};
+  clearInputState();
   Object.values(afterglowTimers).forEach(clearTimeout);
   afterglowTimers = {};
   // Clear all per-entry timers
@@ -1022,10 +1047,10 @@ function connect() {
       buildLayout();
     } else if (data.type === 'mode_switch') {
       mode = data.key;
-      pressedKeys.clear();
-      dirState = { left: false, right: false, up: false, down: false };
-      axisState = {};
+      clearInputState();
       buildLayout();
+    } else if (data.type === 'input_reset') {
+      resetDisplayedInput();
     } else {
       const delay = config?.displayDelayMs || 0;
       const process = () => {

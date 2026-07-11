@@ -679,6 +679,11 @@ async def sender_handler(ws):
                 was_active = remote_control_enabled
             else:
                 was_active = False
+        # Reset displayed input state on every sender disconnect, regardless
+        # of Remote Control state, so a missing key-up/neutral axis does not
+        # remain stuck on browser overlays. Broadcast this before the RC
+        # disable notification below (a separate, independent state).
+        await broadcast_to_browsers(json.dumps({"type": "input_reset"}))
         # If remote control was active, disable it
         if was_active:
             _set_rc_state(False)

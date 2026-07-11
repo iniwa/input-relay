@@ -379,6 +379,78 @@ class SenderHandlerReadinessTests(unittest.TestCase):
         self.assertEqual(self.fake.injected, [])
 
 
+class FakeBrowserClient:
+    """Stand-in for a receiver-side /browser websocket client: records every
+    message handed to send() without any real socket."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, msg):
+        self.sent.append(msg)
+
+
+class SenderDisconnectInputResetTests(unittest.TestCase):
+    """sender_handler cleanup must broadcast one input_reset to browser
+    clients for every sender disconnect, independent of Remote Control
+    state, so a missing key-up/neutral axis does not stay stuck on the
+    overlay. Driven with fake sender/browser connections only."""
+
+    def setUp(self):
+        self.fake = FakeInjector()
+        self._orig_injector = input_server.input_injector
+        input_server.input_injector = self.fake
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        input_server.browser_clients.clear()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_server.input_injector = self._orig_injector
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        input_server.browser_clients.clear()
+
+    def test_disconnect_broadcasts_input_reset_even_when_rc_never_enabled(self):
+        browser = FakeBrowserClient()
+        input_server.browser_clients.add(browser)
+        conn = FakeSenderConn([])  # connects then disconnects, RC untouched
+        asyncio.run(input_server.sender_handler(conn))
+        types = [json.loads(m)["type"] for m in browser.sent]
+        self.assertEqual(types, ["input_reset"])
+
+    def test_input_reset_precedes_rc_disable_notice_on_disconnect(self):
+        order = []
+        orig_set_rc_state = input_server._set_rc_state
+
+        def recording_set_rc_state(enabled, mark_synchronized=None):
+            order.append(("set_rc_state", enabled))
+            return orig_set_rc_state(enabled, mark_synchronized=mark_synchronized)
+
+        async def recording_broadcast(msg):
+            order.append(("broadcast", json.loads(msg)["type"]))
+
+        conn = FakeSenderConn([
+            json.dumps({"type": "remote_control", "enabled": True}),
+        ])
+        with patch.object(input_server, "_set_rc_state", recording_set_rc_state), \
+                patch.object(input_server, "broadcast_to_browsers", recording_broadcast):
+            asyncio.run(input_server.sender_handler(conn))
+
+        # The sender's own message enables RC first; on disconnect,
+        # input_reset must be broadcast before the (separate) RC-disable
+        # notice that follows because RC was active.
+        self.assertEqual(order, [
+            ("set_rc_state", True),
+            ("broadcast", "input_reset"),
+            ("set_rc_state", False),
+        ])
+
+
 class RemoteControlApiGatingTests(unittest.TestCase):
     """_api_post_remote_control fail-closed / pending-enable behavior, with
     _send_command_to_sender and _notify_sender_async replaced by fakes so no

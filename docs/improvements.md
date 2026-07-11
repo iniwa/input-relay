@@ -18,18 +18,7 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ## 改善候補
 
-### 1. Remote Control の安全性
-
-- [ ] **【高】sender 切断時に browser の押下・軸状態を明示的にリセットする**
-  - 現状: sender cleanup (`receiver/input_server.py:559-567`) は RC 状態だけを解除し、
-    browser へ入力 reset を送らない。browser WebSocket は接続したままなので、切断時に
-    key-down 中だった keyboard/mouse/gamepad と最後の axis 値は matching up が来ず、
-    `receiver/overlay.html:816-870,1014-1046` に残り続ける。
-  - 対応案: 後方互換な `input_reset` message を broadcast し、delay timer、pressed、
-    direction、axis、afterglow を全て clear する。`docs/api.md` と frontend の状態テストを同期。
-  - 制約: 既存 message type、browser 接続、レイアウト・履歴設定を壊さない。
-
-### 2. 常駐キュー・入力ソース・WebSocket
+### 1. 常駐キュー・入力ソース・WebSocket
 
 - [ ] **【高】sender reconnect 時の子 Task を必ず cancel・回収する**
   - 現状: `_send_loop` は各周回で `Queue.get()` と `Event.wait()` の 2 Task を作る
@@ -100,7 +89,7 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
   - 対応案: 登録後の処理全体を 1 つの `try/finally` にし、初回 send にも timeout を適用。
   - 制約: 接続直後の config 1 件送信と browser message 無視の仕様を維持。
 
-### 3. API・設定・起動フロー
+### 2. API・設定・起動フロー
 
 - [ ] **【高】receiver 再起動の GUI/API 契約と安全な終了を揃える**
   - 現状: GUI は `POST /api/restart` (`receiver/config_gui.html:914-920`) だが、backend と
@@ -149,7 +138,7 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
     port を安全に取得して firewall/open に渡す。未設定・不正値は既定 8082/8083へ戻す。
   - 制約: 既定 port、既存 config keys、管理者昇格、Gitea pull/install/start 順を維持。
 
-### 4. 保守性・検証
+### 3. 保守性・検証
 
 - [ ] **【中】中核常駐フローの regression test を追加する**
   - 現状: coverage.py による 2026-07-11 実測は全 1,784 statements 中 10%。
@@ -183,6 +172,48 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: sender 切断時に browser の押下・軸状態を明示的にリセットする
+検証: `python -m py_compile receiver\input_server.py` OK、
+`python -m unittest discover -s tests` OK（52件）、`python -m ruff check .` OK、
+`git diff --check` OK。Live 確認（実機での sender 切断・オーバーレイ表示確認）は
+未実施（Main PC sender / Sub PC receiver が必要なため）。実 `config/*.json` の
+読み書きなし。
+
+`receiver/input_server.py`: `sender_handler` の `finally` に、
+`{"type":"input_reset"}` を `await broadcast_to_browsers(...)` で送る処理を追加。
+Remote Control が有効だった場合の `_set_rc_state(False)`（既存の
+`remote_control_state` 通知）より前に置き、RC が元々無効だった接続の切断でも
+必ず送られるようにした（`was_active` 条件からは独立）。
+
+`receiver/overlay.html`: `ws.onmessage` に `input_reset` 分岐を追加し新設の
+`resetDisplayedInput()` を呼ぶ。この関数は `displayDelayTimers` を即座に
+`clearTimeout` して空にし、`afterglowTimers` を全 `clearTimeout` した上で
+該当要素の `afterglow` クラスを外し、`pressedKeys` に残っていた要素の
+`active` クラスを外してから、`pressedKeys`/`dirState`/`axisState` を新設の
+共有ヘルパー `clearInputState()`（旧 `mode_switch`/`buildLayout` 内の重複コード
+3行を集約したもの）でクリアし、`updateStickVisuals()` でコントローラーの
+スティック/トリガー表示を中立へ戻し、`trailPoints = []` でマウストレイルの
+蓄積点だけを消す（`trailAnimId`/描画ループは止めない）。`buildLayout()` の
+呼び出しや履歴エントリ追加は行わない。`mode_switch` は `clearInputState()` を
+呼ぶよう置き換えただけで、挙動は従来通り（続けて `buildLayout()` が呼ばれる）。
+
+`docs/api.md`: `/browser` メッセージ表と §6.3 に `input_reset`
+（`sender_handler` cleanup ごとに必ず送信、追加フィールドなし、overlay 側の
+リセット内容）を追記。
+
+`tests/test_remote_control.py` に `SenderDisconnectInputResetTests` を追加
+（fake sender/browser 接続のみ、実ソケット不使用）。RC が一度も有効化されて
+いない切断でも `input_reset` が飛ぶこと、RC 有効化後の切断では
+`input_reset` の broadcast が `_set_rc_state(False)` より先に呼ばれることを
+`_set_rc_state`/`broadcast_to_browsers` を記録用ラッパーに差し替えて検証。
+`tests/test_overlay_input_reset.py` を新規追加（JS 実行なしの静的
+regression。`overlay.html` を単一 HTML/JS ファイルとして読み込み、
+`input_reset`/`mode_switch` 分岐の呼び出し先、`resetDisplayedInput` が
+上記の全カテゴリを clear し `buildLayout()`/`recordCurrentState()` を
+呼ばないこと、`clearInputState` が `mode_switch` と共有されていることを
+文字列/brace-matching ベースで確認）。既存 message type・browser 接続
+ライフサイクル・レイアウト/履歴設定・ポート/依存関係は変更なし。
 
 ### 2026-07-11: Remote Control 有効化時に入力抑止を表示待ちより先に確立する
 検証: `python -m py_compile sender\input_sender.py` OK、
