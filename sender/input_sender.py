@@ -401,17 +401,25 @@ async def _send_loop(ws):
     while running:
         get_task = asyncio.ensure_future(event_queue.get())
         reconnect_task = asyncio.ensure_future(_reconnect_event.wait())
-        done, pending = await asyncio.wait(
-            [get_task, reconnect_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for t in pending:
-            t.cancel()
-        if reconnect_task in done:
-            print("[Sender] Reconnect requested...")
-            return
-        msg = get_task.result()
-        await ws.send(msg)
+        try:
+            await asyncio.wait(
+                [get_task, reconnect_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if reconnect_task.done():
+                print("[Sender] Reconnect requested...")
+                return
+            msg = get_task.result()
+            await ws.send(msg)
+        finally:
+            # 未完了の子 Task を必ず cancel し、await で回収してから次周回・
+            # 呼び出し元へ抜ける。これを怠ると、次の周回で作った新しい
+            # get_task と旧 get_task が競合して次イベントを取りこぼしたり、
+            # cancel だけして未回収の Task が残ったりし得る。
+            for t in (get_task, reconnect_task):
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(get_task, reconnect_task, return_exceptions=True)
 
 
 async def sender(host, port):
@@ -439,16 +447,26 @@ async def sender(host, port):
                 send_task = asyncio.ensure_future(_send_loop(ws))
                 recv_task = asyncio.ensure_future(_recv_from_receiver(ws))
                 try:
-                    done, pending = await asyncio.wait(
+                    await asyncio.wait(
                         [send_task, recv_task],
                         return_when=asyncio.FIRST_COMPLETED,
                     )
-                    for t in pending:
-                        t.cancel()
-                except Exception:
-                    logger.exception("send/recv tasks failed; cancelling")
-                    send_task.cancel()
-                    recv_task.cancel()
+                finally:
+                    # どちらかの完了・await 自体の例外を問わず、残っている方を
+                    # 必ず cancel してから両方を await で回収する。websocket
+                    # コンテキストを抜ける前に Task を残さないため。
+                    for t in (send_task, recv_task):
+                        if not t.done():
+                            t.cancel()
+                    results = await asyncio.gather(
+                        send_task, recv_task, return_exceptions=True,
+                    )
+                    for r in results:
+                        if isinstance(r, Exception):
+                            logger.error(
+                                "send/recv task raised unexpectedly: %r", r, exc_info=r,
+                            )
+                            raise r
 
         except (ConnectionRefusedError, OSError) as e:
             ws_connection = None

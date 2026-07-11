@@ -20,17 +20,6 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ### 1. 常駐キュー・入力ソース・WebSocket
 
-- [ ] **【高】sender reconnect 時の子 Task を必ず cancel・回収する**
-  - 現状: `_send_loop` は各周回で `Queue.get()` と `Event.wait()` の 2 Task を作る
-    (`sender/input_sender.py:397-409`)。receiver 側の受信終了時、外側は send task を
-    cancel するだけで await しない (`sender/input_sender.py:433-445`)。idle 切断 1 回で
-    orphan `Queue.get` 1 件 + `Event.wait` 1 件が残り得て、切断 N 回なら最大 N 件の
-    先頭入力欠落と 2N Task 残留になる。
-  - 対応案: `_send_loop` の `finally` で両子 Task を cancel して
-    `gather(return_exceptions=True)` し、外側も send/recv task を cancel 後に await する。
-    repeated-cancel 後に orphan 0 件・次イベント送信 1 件を検証する。
-  - 制約: 500 件上限、oldest-drop、FIFO、reconnect backoff、remote state 通知を維持。
-
 - [ ] **【高】sender monitor WebSocket の queue と client send 待ちを有界化する**
   - 現状: `sender/monitor_ws.py:28` は `asyncio.Queue()` 無上限で、client send
     (`sender/monitor_ws.py:49-63`) に timeout がない。raw mouse は最大 62.5 event/s、
@@ -172,6 +161,41 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: sender reconnect 時の子 Task を必ず cancel・回収する
+検証: `python -m py_compile sender\input_sender.py` OK、
+`python -m unittest discover -s tests` OK（54件）、`python -m ruff check .` OK、
+`git diff --check` OK。Live 確認（実機での sender 切断・再接続）は未実施
+（Main PC sender / Sub PC receiver が必要なため）。実 `config/*.json` の
+読み書きなし。
+
+`sender/input_sender.py`: `_send_loop` の各周回を `try/finally` に変更し、
+`finally` で `get_task`/`reconnect_task` のうち未完了のものを `cancel()` した
+上で必ず `asyncio.gather(get_task, reconnect_task, return_exceptions=True)` を
+`await` してから次周回・呼び出し元へ抜けるようにした（reconnect による
+`return` 経路・`ws.send` 例外経路のいずれも通る）。`sender()` 側も同様に、
+`send_task`/`recv_task` を待つ `try/finally` に変更し、`finally` で未完了の
+方を `cancel()` してから両方を `gather(..., return_exceptions=True)` で
+回収し、結果に `CancelledError` 以外の例外が含まれていれば `logger.error`
+で記録した上で re-raise するようにした（従来は `done` 側の例外を一切
+確認しておらず、`_send_loop`/`_recv_from_receiver` が予期しない例外で
+終了しても静かに握り潰されていた）。外側の `except (ConnectionRefusedError,
+OSError)` / `except websockets.ConnectionClosed` / `except Exception` による
+reconnect backoff・remote state 通知はそのまま維持。500 件上限・oldest-drop・
+FIFO send の挙動も変更なし。
+
+`tests/test_remote_control.py` に 2 クラス追加（46件→54件）。
+`SendLoopReconnectCleanupTests`: 専用の `event_queue`/`_reconnect_event` を
+差し替え、reconnect 直後（未送信）サイクルと「1 件 queue → 送信 → reconnect」
+サイクルを 3 回繰り返し、各サイクル後に `asyncio.all_tasks()`（自タスク除く）
+が空であること（orphan task 0 件）と、3 サイクル終了後に
+`fake_ws.sent == ["event-0", "event-1", "event-2"]`（欠落・重複なく厳密に
+1 回ずつ送信）であることを検証。`SenderTaskExceptionPropagationTests`:
+`_send_loop` が即座に例外を送出し `_recv_from_receiver` が完了しないよう
+差し替えた状態で `sender()` を実行し、`logger.error` が該当の例外
+インスタンスを `exc_info` 付きで記録すること（＝握り潰されず外側の
+reconnect パスまで伝播すること）を確認（`RECONNECT_BACKOFF` はテスト内で
+短縮）。
 
 ### 2026-07-11: sender 切断時に browser の押下・軸状態を明示的にリセットする
 検証: `python -m py_compile receiver\input_server.py` OK、

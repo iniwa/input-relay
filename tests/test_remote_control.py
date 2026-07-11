@@ -743,5 +743,114 @@ class RemoteModeSuppressionOrderingTests(unittest.TestCase):
         self.assertFalse(input_sender.remote.mode)
 
 
+class SendLoopReconnectCleanupTests(unittest.IsolatedAsyncioTestCase):
+    """_send_loop's per-iteration Queue.get()/Event.wait() child tasks must
+    not survive a reconnect/cancellation cycle, and repeated cycles must
+    neither lose nor duplicate the next queued event. Fake ws + a private
+    event_queue/_reconnect_event only, no real socket."""
+
+    def setUp(self):
+        self._orig_queue = input_sender.event_queue
+        input_sender.event_queue = asyncio.Queue(maxsize=input_sender._EVENT_QUEUE_MAXSIZE)
+        self._orig_reconnect_event = input_sender._reconnect_event
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_sender.event_queue = self._orig_queue
+        input_sender._reconnect_event = self._orig_reconnect_event
+
+    async def _assert_no_orphan_tasks(self):
+        # Give the loop one more turn so any cancellation that was already
+        # scheduled (but not yet delivered) has a chance to land -- the
+        # invariant we're checking is that _send_loop's own finally already
+        # awaited its child tasks to completion, not merely fire-and-forget
+        # cancelled them.
+        await asyncio.sleep(0)
+        leftover = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        self.assertEqual(leftover, [], f"orphan tasks left pending: {leftover}")
+
+    async def test_repeated_reconnect_cycles_leave_no_orphan_tasks_and_send_next_event_once(self):
+        reconnect_event = asyncio.Event()
+        input_sender._reconnect_event = reconnect_event
+        fake_ws = FakeSenderTransport()
+
+        for cycle in range(3):
+            # An immediate reconnect with nothing queued must return right
+            # away, sending nothing, and leaking no child task.
+            reconnect_event.set()
+            await asyncio.wait_for(input_sender._send_loop(fake_ws), timeout=5)
+            reconnect_event.clear()
+            await self._assert_no_orphan_tasks()
+
+            # Exactly one event queued for "this" connection must be
+            # delivered exactly once before the next reconnect tears the
+            # cycle down cleanly again.
+            await input_sender.event_queue.put(f"event-{cycle}")
+            loop_task = asyncio.ensure_future(input_sender._send_loop(fake_ws))
+            await asyncio.wait_for(fake_ws.first_send.wait(), timeout=5)
+            fake_ws.first_send.clear()
+            reconnect_event.set()
+            await asyncio.wait_for(loop_task, timeout=5)
+            reconnect_event.clear()
+            await self._assert_no_orphan_tasks()
+
+        self.assertEqual(fake_ws.sent, ["event-0", "event-1", "event-2"])
+        self.assertTrue(input_sender.event_queue.empty())
+
+
+class SenderTaskExceptionPropagationTests(unittest.IsolatedAsyncioTestCase):
+    """sender() must not silently discard an unexpected exception raised by
+    a completed send/recv task -- it must surface (and get logged) instead
+    of being dropped once the pending sibling is cancelled. Fake ws/connect
+    only, no real socket; RECONNECT_BACKOFF shortened so the retry loop
+    doesn't block the test for multiple seconds."""
+
+    def setUp(self):
+        self._orig_backoff = input_sender.RECONNECT_BACKOFF
+        input_sender.RECONNECT_BACKOFF = 0.01
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_sender.RECONNECT_BACKOFF = self._orig_backoff
+        input_sender.remote.mode = False
+        input_sender.ws_status = "disconnected"
+        input_sender.ws_connection = None
+        input_sender.running = True
+
+    async def test_unexpected_send_loop_exception_is_not_suppressed(self):
+        boom = RuntimeError("boom")
+
+        async def raising_send_loop(ws):
+            raise boom
+
+        async def never_ending_recv(ws):
+            await asyncio.Event().wait()
+
+        fake_ws = FakeSenderTransport()
+
+        with patch.object(input_sender.websockets, "connect", FakeConnectContext(fake_ws)), \
+             patch.object(input_sender, "_send_loop", raising_send_loop), \
+             patch.object(input_sender, "_recv_from_receiver", never_ending_recv), \
+             patch.object(input_sender.logger, "error") as mock_error:
+            task = asyncio.ensure_future(input_sender.sender("dummyhost", 1))
+            try:
+                await asyncio.sleep(0.2)
+            finally:
+                input_sender.running = False
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+                pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
+        found = any(call.kwargs.get("exc_info") is boom for call in mock_error.call_args_list)
+        self.assertTrue(
+            found, f"expected logger.error to log the unretrieved exception; calls={mock_error.call_args_list}"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
