@@ -133,88 +133,100 @@ def run(is_running, on_delta):
     winmm = ctypes.windll.winmm
     winmm.timeBeginPeriod(1)
 
-    # 累積デルタ
-    accum = [0, 0]
-    last_flush = time.perf_counter()
+    # timeBeginPeriod(1) 以後に確保する全リソース（module handle / window
+    # class / window / timer）は、失敗した早期 return を含む全経路で必ず
+    # 解放されるよう、ここから 1 つの try/finally に入れる。実際に確保でき
+    # たものだけを finally で解放するため、成否をフラグで追跡する。
+    hinstance = None
+    class_registered = False
+    hwnd = None
+    timer_installed = False
 
-    def flush():
-        nonlocal last_flush
-        if accum[0] == 0 and accum[1] == 0:
-            last_flush = time.perf_counter()
-            return
-        dx, dy = accum[0], accum[1]
-        accum[0] = 0
-        accum[1] = 0
-        last_flush = time.perf_counter()
-        on_delta(dx, dy)
-
-    def wnd_proc(hwnd, msg_id, wparam, lparam):
-        if msg_id == _WM_INPUT:
-            buf = ctypes.create_string_buffer(256)
-            size = wintypes.UINT(256)
-            result = user32.GetRawInputData(
-                lparam, _RID_INPUT, buf, byref(size),
-                sizeof(_RAWINPUTHEADER),
-            )
-            if result > 0:
-                raw = ctypes.cast(buf, POINTER(_RAWINPUT)).contents
-                if (raw.header.dwType == _RIM_TYPEMOUSE
-                        and not (raw.mouse.usFlags & _MOUSE_MOVE_ABSOLUTE)):
-                    dx = raw.mouse.lLastX
-                    dy = raw.mouse.lLastY
-                    if dx != 0 or dy != 0:
-                        accum[0] += dx
-                        accum[1] += dy
-            return 0
-        if msg_id == _WM_TIMER and wparam == _FLUSH_TIMER_ID:
-            flush()
-            return 0
-        return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
-
-    proc = _WNDPROC_TYPE(wnd_proc)
-    hinstance = kernel32.GetModuleHandleW(None)
-
-    wc = _WNDCLASSEXW()
-    wc.cbSize = sizeof(_WNDCLASSEXW)
-    wc.lpfnWndProc = proc
-    wc.hInstance = hinstance
-    wc.lpszClassName = "RawMouseInput"
-
-    if not user32.RegisterClassExW(byref(wc)):
-        print("[RawMouse] Failed to register window class")
-        return
-
-    hwnd = user32.CreateWindowExW(
-        0, "RawMouseInput", "", 0,
-        0, 0, 0, 0,
-        None, None, hinstance, None,
-    )
-    if not hwnd:
-        print("[RawMouse] Failed to create window")
-        return
-
-    rid = _RAWINPUTDEVICE()
-    rid.usUsagePage = 0x01
-    rid.usUsage = 0x02
-    rid.dwFlags = _RIDEV_INPUTSINK
-    rid.hwndTarget = hwnd
-    if not user32.RegisterRawInputDevices(byref(rid), 1, sizeof(_RAWINPUTDEVICE)):
-        print("[RawMouse] Failed to register raw input device")
-        return
-
-    # Timer で 16ms ごとに WM_TIMER を投げる。polling ベースより正確。
-    if not user32.SetTimer(hwnd, _FLUSH_TIMER_ID, _FLUSH_INTERVAL_MS, None):
-        print("[RawMouse] SetTimer failed; falling back to polling")
-
-    print("[RawMouse] Raw mouse input listener started")
-
-    # MsgWaitForMultipleObjectsEx でメッセージ到着 or タイムアウトで wake。
-    # time.sleep による busy-wait を避け、Timer 精度にぶら下がる形にする。
-    QS_ALLINPUT = 0x04FF
-    MWMO_INPUTAVAILABLE = 0x0004
-    msg = wintypes.MSG()
-    PM_REMOVE = 0x0001
     try:
+        hinstance = kernel32.GetModuleHandleW(None)
+
+        # 累積デルタ
+        accum = [0, 0]
+        last_flush = time.perf_counter()
+
+        def flush():
+            nonlocal last_flush
+            if accum[0] == 0 and accum[1] == 0:
+                last_flush = time.perf_counter()
+                return
+            dx, dy = accum[0], accum[1]
+            accum[0] = 0
+            accum[1] = 0
+            last_flush = time.perf_counter()
+            on_delta(dx, dy)
+
+        def wnd_proc(hwnd, msg_id, wparam, lparam):
+            if msg_id == _WM_INPUT:
+                buf = ctypes.create_string_buffer(256)
+                size = wintypes.UINT(256)
+                result = user32.GetRawInputData(
+                    lparam, _RID_INPUT, buf, byref(size),
+                    sizeof(_RAWINPUTHEADER),
+                )
+                if result > 0:
+                    raw = ctypes.cast(buf, POINTER(_RAWINPUT)).contents
+                    if (raw.header.dwType == _RIM_TYPEMOUSE
+                            and not (raw.mouse.usFlags & _MOUSE_MOVE_ABSOLUTE)):
+                        dx = raw.mouse.lLastX
+                        dy = raw.mouse.lLastY
+                        if dx != 0 or dy != 0:
+                            accum[0] += dx
+                            accum[1] += dy
+                return 0
+            if msg_id == _WM_TIMER and wparam == _FLUSH_TIMER_ID:
+                flush()
+                return 0
+            return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
+
+        proc = _WNDPROC_TYPE(wnd_proc)
+
+        wc = _WNDCLASSEXW()
+        wc.cbSize = sizeof(_WNDCLASSEXW)
+        wc.lpfnWndProc = proc
+        wc.hInstance = hinstance
+        wc.lpszClassName = "RawMouseInput"
+
+        if not user32.RegisterClassExW(byref(wc)):
+            print("[RawMouse] Failed to register window class")
+            return
+        class_registered = True
+
+        hwnd = user32.CreateWindowExW(
+            0, "RawMouseInput", "", 0,
+            0, 0, 0, 0,
+            None, None, hinstance, None,
+        )
+        if not hwnd:
+            print("[RawMouse] Failed to create window")
+            return
+
+        rid = _RAWINPUTDEVICE()
+        rid.usUsagePage = 0x01
+        rid.usUsage = 0x02
+        rid.dwFlags = _RIDEV_INPUTSINK
+        rid.hwndTarget = hwnd
+        if not user32.RegisterRawInputDevices(byref(rid), 1, sizeof(_RAWINPUTDEVICE)):
+            print("[RawMouse] Failed to register raw input device")
+            return
+
+        # Timer で 16ms ごとに WM_TIMER を投げる。polling ベースより正確。
+        timer_installed = bool(user32.SetTimer(hwnd, _FLUSH_TIMER_ID, _FLUSH_INTERVAL_MS, None))
+        if not timer_installed:
+            print("[RawMouse] SetTimer failed; flushing on each poll wake instead")
+
+        print("[RawMouse] Raw mouse input listener started")
+
+        # MsgWaitForMultipleObjectsEx でメッセージ到着 or タイムアウトで wake。
+        # time.sleep による busy-wait を避け、Timer 精度にぶら下がる形にする。
+        QS_ALLINPUT = 0x04FF
+        MWMO_INPUTAVAILABLE = 0x0004
+        msg = wintypes.MSG()
+        PM_REMOVE = 0x0001
         while is_running():
             user32.MsgWaitForMultipleObjectsEx(
                 0, None, _FLUSH_INTERVAL_MS, QS_ALLINPUT, MWMO_INPUTAVAILABLE,
@@ -222,12 +234,22 @@ def run(is_running, on_delta):
             while user32.PeekMessageW(byref(msg), hwnd, 0, 0, PM_REMOVE):
                 user32.TranslateMessage(byref(msg))
                 user32.DispatchMessageW(byref(msg))
+            if not timer_installed:
+                # SetTimer が失敗した場合、WM_TIMER が来ないので毎 wake で
+                # 明示的に flush する（既存の 16ms wait に相乗り）。
+                flush()
     finally:
-        for action, fn in (
-            ("KillTimer", lambda: user32.KillTimer(hwnd, _FLUSH_TIMER_ID)),
-            ("DestroyWindow", lambda: user32.DestroyWindow(hwnd)),
-            ("timeEndPeriod", lambda: winmm.timeEndPeriod(1)),
-        ):
+        cleanup_steps = []
+        if timer_installed:
+            cleanup_steps.append(("KillTimer", lambda: user32.KillTimer(hwnd, _FLUSH_TIMER_ID)))
+        if hwnd:
+            cleanup_steps.append(("DestroyWindow", lambda: user32.DestroyWindow(hwnd)))
+        if class_registered:
+            cleanup_steps.append(
+                ("UnregisterClassW", lambda: user32.UnregisterClassW("RawMouseInput", hinstance))
+            )
+        cleanup_steps.append(("timeEndPeriod", lambda: winmm.timeEndPeriod(1)))
+        for action, fn in cleanup_steps:
             try:
                 fn()
             except Exception:

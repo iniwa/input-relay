@@ -18,134 +18,8 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ## 改善候補
 
-### 1. 常駐キュー・入力ソース・WebSocket
-
-- [ ] **【高】sender monitor WebSocket の queue と client send 待ちを有界化する**
-  - 現状: `sender/monitor_ws.py:28` は `asyncio.Queue()` 無上限で、client send
-    (`sender/monitor_ws.py:49-63`) に timeout がない。raw mouse は最大 62.5 event/s、
-    gamepad は 6 軸変化時最大 360 event/s なので、1 slow client で最大約
-    422.5 event/s（25,350/min）が無制限に蓄積し得る。
-  - 対応案: queue を 500 件程度に制限し、loop 上で満杯時 oldest-drop、client 0 件時は
-    即 drop、client ごとの send timeout 後に close/discard する。slow/healthy client と
-    overflow の async test を追加する。
-  - 制約: port 8083、JSON、healthy FIFO、receiver 切断中も local monitor 可能な挙動を維持。
-
-- [ ] **【高】receiver browser fan-out を client 間・RC 注入から独立させる**
-  - 現状: `broadcast_to_browsers` は client ごとに最大 1.0 秒を直列で待つ
-    (`receiver/input_server.py:29,123-143`)。sender handler は broadcast 完了後に
-    `replay_event` する (`receiver/input_server.py:543-551`) ため、stalled client N 件で
-    key-down/up 注入が名目最大 N 秒遅れる。2026-07-09 の完了アーカイブにある
-    「遅い client が他 client / RC 注入を遅らせない」という目的を満たしていない。
-  - 対応案: RC の state 判定・注入を browser await より前に行い、browser send は
-    client ごとの timeout/cleanup を保ったまま同時進行させる。1 stalled + 1 healthy
-    client で healthy 配信と注入が待たないことをテストする。
-  - 制約: client ごとの message 順、payload、failed client discard、RC 条件を維持。
-
-- [ ] **【高】standalone の入力 queue を有界化する**
-  - 現状: `receiver/input_server.py:578-588,604` は producer 無条件 `put_nowait`、
-    consumer 1 coroutine、`asyncio.Queue()` 無上限。6 軸が変化する gamepad だけでも
-    最大 360 event/s で、500 件相当を約 1.39 秒で超える。
-  - 対応案: sender と同じ 500 件上限 + loop thread 上の oldest-drop/newest enqueue とし、
-    overflow log を rate limit する。key down/up の overflow 時 state reset 方針を
-    handoff で固定し、queue 上限テストを追加する。
-  - 制約: standalone JSON、通常 FIFO、60Hz、keyboard/mouse/gamepad 対応を維持。
-
-- [ ] **【高】Raw Input の偽 fallback と失敗経路の resource cleanup を直す**
-  - 現状: `SetTimer` 失敗時に fallback と表示する (`sender/raw_mouse.py:206-207`) が、
-    `flush()` は WM_TIMER 分岐 (`sender/raw_mouse.py:169-171`) だけで、poll loop
-    (`sender/raw_mouse.py:217-224`) は timeout 後に flush しないため送信は 0 件/s になる。
-    また `timeBeginPeriod(1)` 後の 3 early-return (`sender/raw_mouse.py:183-203`) は
-    `timeEndPeriod` 等の finally (`sender/raw_mouse.py:225-234`) に入らない。
-  - 対応案: timer 成否を保持し、失敗時は 16ms wake ごとに累積 delta を flush する。
-    `timeBeginPeriod` 以後の全 resource acquisition を単一 `try/finally` に入れる。
-  - 制約: 16ms throttle、delta 精度、Raw Input background capture、message shape を維持。
-
-- [ ] **【高】共有 Gamepad を切断時 neutralize し、一過性例外から再開させる**
-  - 現状: 物理切断・controller 切替時に 3 state buffer を release/neutral event なしで
-    clear する (`input_common/gamepad.py:147-168,224-232`) ため表示が残る。`run()` は
-    pygame init/scan/pump/getter の例外で終了 (`input_common/gamepad.py:106-126`) し、
-    sender/standalone とも daemon thread の起動は各 1 回、retry は 0 回
-    (`sender/input_sender.py:570-573`, `receiver/standalone_capture.py:85-93,109-110`)。
-  - 対応案: clear 前に active button/hat/threshold axis の key-up と raw axis 0 を emit し、
-    bounded backoff で pygame session を再初期化する。fake pygame/joystick test を追加。
-  - 制約: 60Hz、0.1 秒 disconnect sleep、既存 key 名・JSON、共有 2 利用元を維持。
-
-- [ ] **【中】browser 登録後の全経路を finally cleanup で囲む**
-  - 現状: `receiver/input_server.py:508-524` は client 登録後、outer `finally` より前に
-    `load_config()` と初回 send を行う。破損 JSON/OSError または
-    `ConnectionClosed` 以外の初回 send 例外では set から削除されず、失敗接続ごとに
-    stale client が 1 件ずつ残り得る。
-  - 対応案: 登録後の処理全体を 1 つの `try/finally` にし、初回 send にも timeout を適用。
-  - 制約: 接続直後の config 1 件送信と browser message 無視の仕様を維持。
-
-### 2. API・設定・起動フロー
-
-- [ ] **【高】receiver 再起動の GUI/API 契約と安全な終了を揃える**
-  - 現状: GUI は `POST /api/restart` (`receiver/config_gui.html:914-920`) だが、backend と
-    `docs/api.md` は `DELETE` のみ (`receiver/input_server.py:354-358`) で必ず 404。
-    GUI は HTTP status を確認せず 2 秒後に reload する。正式 DELETE 経路にも再入 guard と
-    RC 解放がない (`receiver/input_server.py:328-331,466-470`)。
-  - 対応案: GUI を DELETE にして `res.ok` を検査し、backend は one-shot guard と
-    RC/input cleanup を行ってから exec する。method dispatch と連打の regression test を追加。
-  - 制約: 正式 API は DELETE のまま、0.5 秒応答先行、port/path を維持。
-
-- [ ] **【高】Receiver GUI の Sender 設定を 2PC のファイル所有境界に合わせる**
-  - 現状: receiver の `/api/sender-config` は Sub PC ローカルの JSON だけを読み書き
-    (`receiver/input_server.py:208-213,259-269`) し、Main PC の sender には届かない。
-    GUI は host/port の 2 keys だけで全置換 (`receiver/config_gui.html:2061-2070`) し、
-    port fallback 3 箇所は旧値 8765 (`receiver/config_gui.html:461,2380,2401`) で、
-    現行 receiver WS 既定 8888 と不一致。secretary-bot 本体には同 API の参照 0 件。
-  - 対応案: Main PC の live 設定は sender GUI/API (8082) を唯一の運用入口として UI に明記。
-    receiver 側 API は互換維持しつつ「receiver-local file」と表示し、保存は既存 JSON へ
-    host/port を merge、fallback は 8888、debug は receiver 実 WS port を使う。
-  - 制約: `/api/sender-config` と config_change は削除せず、実 config を自動移送しない。
-
-- [ ] **【高】standalone launcher で gamepad 実行依存を導入する**
-  - 現状: `start_standalone.bat:19-20` は `websockets pynput` だけを install する一方、
-    capture は pygame が無ければ gamepad を無効化する
-    (`receiver/standalone_capture.py:85-93`)。standalone は gamepad 対応だが、README は
-    現在この 1 dependency だけ手動導入する暫定 workaround を案内している
-    (`README.md:40-46,221-230`)。
-  - 対応案: standalone launcher の既存 pip install に `pygame` を加え、起動 smoke check を行う。
-  - 制約: launcher が依存導入を所有する現行方針、entry point、他 mode の依存を維持。
-
-- [ ] **【高】preset/layout-preset の read-modify-write を 1 transaction にする**
-  - 現状: `ThreadingHTTPServer` に対し、lock は各 load/save の中だけ
-    (`receiver/input_server.py:50-108`)。POST/DELETE の 4 経路
-    (`receiver/input_server.py:224-256,304-325`) は同じ snapshot を並行に読めるため、
-    後勝ち save が別 request の追加・削除を失わせる。
-  - 対応案: 各 mutation 全体を 1 lock transaction にし、可能なら同一 directory の temp
-    file + replace で保存する。2 並行更新の lost-update test を追加する。
-  - 制約: JSON shape/path、旧 preset migration、API response、broadcast を維持。
-
-- [ ] **【高】sender の可変 HTTP/monitor port を周辺フローまで一貫させる**
-  - 現状: port は config から読まれる (`sender/input_sender.py:578,586`) が、monitor GUI は
-    8083 固定 (`sender/sender_gui.html:475-477`)、firewall と自動 open は 8082/8083 固定
-    (`start_sender.bat:32-38`)。custom port では input monitor、自動 GUI、LAN firewall の
-    3 経路が追従しない。
-  - 対応案: GUI は読み込んだ `monitor_port` を使い、launcher は Main PC の config から
-    port を安全に取得して firewall/open に渡す。未設定・不正値は既定 8082/8083へ戻す。
-  - 制約: 既定 port、既存 config keys、管理者昇格、Gitea pull/install/start 順を維持。
-
-### 3. 保守性・検証
-
-- [ ] **【中】中核常駐フローの regression test を追加する**
-  - 現状: coverage.py による 2026-07-11 実測は全 1,784 statements 中 10%。
-    `sender/input_sender.py` 368 statements、`sender/monitor_ws.py` 50、
-    `input_common/gamepad.py` 162、`receiver/standalone_capture.py` 75 を含む
-    9 modules が 0%。既存 unittest は 18 件で、純粋 helper/preset/static path が中心。
-  - 対応案: live hook/socket を起動せず、fake WebSocket/pygame/injector と
-    `unittest.IsolatedAsyncioTestCase` で queue overflow、reconnect cancellation、
-    RC lifecycle、gamepad reset を優先して追加する。coverage は開発時のみ使う。
-  - 制約: pytest/新 runtime dependency/CI を追加せず、実 config に触れない。
-
-- [ ] **【低】確定した重複関数と未参照状態だけを削除する**
-  - 現状: `receiver/config_gui.html` の `switchOverlayMode` は 2 定義
-    (`:1149-1162`, `:2042-2059`) で前者 14 行が後者に上書きされる。
-    `receiver/input_server.py` の `_standalone` は宣言・global・代入の 3 箇所
-    (`:36,592,595`) に対し読み取り 0 件。
-  - 対応案: 前者の重複定義と `_standalone` 3 箇所を挙動不変で削除する。
-  - 制約: mode switch、standalone 分岐、single-file HTML 方針を維持。
+現時点で残っている改善候補はありません（2026-07-11 時点、13件すべて実装・
+検証済み。詳細は「完了アーカイブ」の 2026-07-11 セクションを参照）。
 
 ---
 
@@ -161,6 +35,231 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: 改善候補13件（phase 1/2 handoff）の実装完了
+
+phase 1（resident-stability、handoff
+`docs/handoffs/archive/2026-07-11-all-improvements-phase-1-resident-stability.md`
++ review fix `docs/handoffs/archive/2026-07-11-phase-1-review-fixes.md`）と
+phase 2（API・GUI・launcher、handoff
+`docs/handoffs/archive/2026-07-11-all-improvements-phase-2-api-launcher-gui.md`）
+で、当時の改善候補13件すべてを実装。Codex レビューで atomic legacy-preset
+migration と receiver debug-port 上限チェックの2件の小さな整合性修正を追加し、
+以下の最終検証を実施済み：
+`python -m py_compile`（対象 Python module 全件）: OK、
+`python -m unittest discover -s tests`: OK（130件）、
+`python -m ruff check .`: OK、`git diff --check`: OK（改行コード警告のみ、
+エラーなし）。実機が必要な Live 確認（Main PC sender / Sub PC receiver 実入力、
+物理 gamepad / Raw Input、実 WebSocket slow client、launcher の
+package install/firewall/browser open、実際の receiver restart）は今回も
+未実施としてブロック記録。実 `config/*.json` の読み書きは一切なし
+（例示 config・temp/fake/static test のみ使用）。
+
+#### 1. sender monitor queue/send の有界化
+
+`sender/monitor_ws.py` の `MonitorServer` に `asyncio.Queue(maxsize=500)` を
+導入。`enqueue()` は `call_soon_threadsafe` でキャプチャスレッドから安全に
+loop-thread の `_enqueue_on_loop` を呼び、client 0 件時は即 drop、満杯時は
+oldest 1 件を `get_nowait` してから最新を積む。`_broadcaster` は
+`asyncio.gather` でクライアントへの送信を同時実行し、各送信は
+`_send_to_client` で 1.0 秒 timeout（`_CLIENT_SEND_TIMEOUT`）。失敗クライアントは
+discard 後に `_close_client` で同じ 1.0 秒 timeout の bounded close を
+これも `asyncio.gather` で同時実行し、close が stall/例外を起こしても
+broadcaster や healthy client への配信を止めない（Codex レビューで追加された
+close-side の有界化）。`tests/test_monitor_ws.py`（5件）で slow/healthy
+client の独立配信、overflow の oldest-drop、client 0 件時の drop、
+close-timeout でも broadcaster が継続することを検証。port 8083・JSON 形状・
+receiver 切断中の local monitor 独立動作は変更なし。
+
+#### 2. receiver browser fan-out と RC 注入の独立化
+
+`receiver/input_server.py` の `sender_handler` で `_rc_inject_event(event)` を
+`broadcast_to_browsers` の await より前に実行するよう順序変更。
+`broadcast_to_browsers` は client ごとに `asyncio.gather` で同時送信し、
+1.0 秒 timeout・失敗 client discard は維持したまま、1 client の stall が
+他 client や RC 注入を遅らせない構造にした。`tests/test_remote_control.py`
+の `BroadcastToBrowsersConcurrencyTests`・
+`SenderHandlerInjectsBeforeBroadcastCompletesTests` で、stalled 1件 +
+healthy 1件構成でも healthy 配信が stall を待たずに完了すること、RC 注入が
+stalled browser send の完了を待たないことを検証。message 順・payload・RC
+条件は変更なし。
+
+#### 3. standalone 入力 queue の有界化とオーバーフロー時の入力リセット方針
+
+`receiver/input_server.py` の standalone queue を `asyncio.Queue(maxsize=500)`
+にし、producer 側の enqueue はすべて asyncio loop thread 上で行う（capture
+コールバックは thread-safe なまま）。通常時は FIFO、満杯時は既存の
+backlog を全クリアしてから `{"type": "input_reset"}` を積み、続けて最新
+event を積む方針（key-down/up の欠落より overlay の stuck 表示を避ける
+ことを優先）。overflow 警告ログは5秒に1回まで rate limit。
+`tests/test_standalone_queue.py`（4件）で通常時 FIFO、overflow 時の
+backlog クリア + `input_reset` + 最新 event の順序、ログの rate limit、
+queue 未設定時の no-op を検証。standalone の JSON 形状・60Hz throttling・
+keyboard/mouse/gamepad 対応は変更なし。
+
+#### 4. Raw Input の fallback flush と失敗経路の resource cleanup
+
+`sender/raw_mouse.py`: `SetTimer` の成否を保持し、失敗時は 16ms の
+`MsgWaitForMultipleObjectsEx` wake ごとにメッセージ dispatch 後、蓄積 delta を
+flush するようにした（従来は WM_TIMER 前提で fallback 表示のみ・実送信
+0件/s だった経路を修正）。`timeBeginPeriod(1)` 実行直後から、
+`GetModuleHandleW(None)` を含む以後の全 resource acquisition
+（レビューで `GetModuleHandleW` も対象に追加）を単一 `try/finally` に収め、
+リソースの flag/参照は取得前にまず初期化してから acquire するようにした
+ことで、途中の早期 return 経路でも `timeEndPeriod`・installed timer の
+kill・created window の destroy・登録済み window class の unregister が
+必ず実行される（cleanup 自体の失敗は best-effort/log）。
+`tests/test_raw_mouse.py`（9件）で fake ctypes/Win32 objects により、
+timer 失敗時の 16ms ごとの flush、`GetModuleHandleW` が例外を送出しても
+`timeEndPeriod(1)` が実行され不正な cleanup が走らないことを含めて検証。
+16ms throttle・delta 精度・background capture・message shape は変更なし。
+
+#### 5. 共有 Gamepad の neutralize とリトライ
+
+`input_common/gamepad.py`: 物理切断・controller 切替・session 例外・
+shutdown いずれの state clear 前にも、active な button/hat/threshold axis の
+`key_up` と非中立 raw axis の `axis_update` 値 `0` を emit してから3つの
+state buffer をクリアし joystick 参照を解放するようにした（controller 切替は
+新 joystick 割り当て前に旧 state を neutralize する順序）。`self._pygame` は
+`pg.init()`/`pg.joystick.init()` 呼び出し前に代入するよう変更し、init 途中
+失敗でも teardown 可能にした（レビュー指摘）。outer session の `finally` は
+neutralize → 3 buffer clear → `state["joy"]=None` の順で行った上で、
+neutralize が例外を送出しても pygame teardown は必ず実行し、joystick quit と
+global quit も互いに独立した best-effort 呼び出しにして一方の失敗が他方を
+スキップしないようにし、`_pygame` は常に `None` に戻す。`run()` は
+init/scan/pump/getter の例外を捕捉し、0.1 秒始動・2.0 秒上限の exponential
+backoff で再試行し、polling に到達したら backoff をリセットする。
+`tests/test_gamepad.py`（8件）で fake pygame/joystick により、切断・切替時の
+neutralize、partial-init 失敗時の teardown 可否、neutralize/joystick-quit
+失敗時でも teardown が継続すること、一過性例外からの回復を検証。60Hz
+polling・0.1秒 no-controller sleep・既存 key 名/JSON・sender/standalone
+共有は変更なし。
+
+#### 6. browser 登録後の finally cleanup 一本化
+
+`receiver/input_server.py`: browser を `browser_clients` に登録した後の
+`load_config()` と初回 config send を含む処理全体を単一 `try/finally` に
+収め、初回 send にも既存の 1.0 秒 timeout を適用した。破損 JSON/OSError や
+`ConnectionClosed` 以外の初回 send 例外でも必ず set から discard される。
+`tests/test_remote_control.py` の `BrowserHandlerCleanupTests` で
+non-`ConnectionClosed` の load/send 失敗時にも client が確実に discard
+されることを検証。接続直後 config 1件送信・以後の browser message 無視の
+仕様は変更なし。
+
+#### 7. receiver DELETE restart の契約・one-shot・安全な cleanup
+
+`receiver/config_gui.html` の `restartServer()` を `DELETE` に変更し
+`res.ok` を確認、失敗時はエラー表示のみで reload しない（成功時のみ既存の
+2秒後 reload）。`receiver/input_server.py` に module-level
+`threading.Lock` + pending フラグを追加し、最初の `DELETE` のみ restart
+thread を起動、pending 中の連打は同じ `{"ok": true}` を返すだけで thread を
+増やさない。`_restart_server` は既存の 0.5 秒 sleep（応答を先行させる）の後、
+`os.execv` 前に `_set_rc_state(False)` で追跡中の注入をすべて解放し、
+standalone 有効時（`_standalone_queue is not None` で判定）は
+`standalone_capture.stop()` を best-effort 実行してから exec する。
+cleanup/exec 失敗時は log の上で lock 内 pending guard をリセットし再試行
+可能にする。`tests/test_receiver_restart.py`（8件）で POST 不在・DELETE
+dispatch・連打時に thread が1つだけ起動すること・RC/standalone cleanup が
+exec より先行すること・0.5秒 delay 前に応答が返ること・exec 失敗時に guard が
+解除されることを fake のみで検証（実プロセス再起動は行わない）。正式 API は
+`DELETE /api/restart` のまま、port/path は変更なし。
+
+#### 8. receiver-local sender config の所有境界・UI・merge・8888・debug port
+
+`receiver/config_gui.html`: セクションを Sub PC ローカルコピーである旨・
+常駐 Main PC sender は構成しない旨・実運用の変更は Main PC sender
+GUI/API（既定 8082）で行う旨を明記するラベルに変更。旧 `8765` 固定の
+fallback 3箇所をすべて `8888` に統一。`receiver/input_server.py` の
+`POST /api/sender-config` は `_config_io_lock` 配下の単一 read-modify-write
+transaction にし、既存 receiver-local JSON（無ければ `{}`）を読み込んで
+`host`/`port` のみ更新・他 key は保持したまま保存し、merge 後の完全な
+object を broadcast する（他の incoming key は無視）。debug WebSocket は
+receiver-local sender config ではなく、receiver プロセス実際の `_ws_port` を
+使うようにし、`_inject_ws_port()` が `config_gui.html` 配信時に `<head>` へ
+`window.__WS_PORT__=<int>` を注入するようにした。`connectDebug()` は
+その注入値を使い、`Number.isInteger(...) && >=1 && <=65535` の範囲チェック
+（Codex レビューで追加された上限チェック）を通らない場合のみ `8888` に
+fallback する。`tests/test_receiver_config_transactions.py` の
+`SenderConfigMergeTests`（4件）で merge・他 key 保持・extra key 無視・
+broadcast の merged full object を、`InjectWsPortTests`（3件）で実際の
+整数 port 注入・`<head>` 一箇所のみへの注入を検証。`/api/sender-config` と
+`config_change` は削除・仕様変更なし、実 config の自動移送も行わない。
+
+#### 9. standalone launcher の pygame 依存導入
+
+`start_standalone.bat` の既存 `pip install` 行に `pygame` を追加（fetch/pull
+/install/start の順序・entry point は変更なし）。`README.md` の standalone
+説明から pygame 手動導入の暫定 workaround・関連する制限記述を削除し、
+launcher が導入する旨に更新。`tests/test_launcher_batch_static.py` に
+`start_standalone.bat` のコミット済みテキストのみを対象とした静的
+regression（サーバー起動・package install なし）を追加。
+
+#### 10. preset/layout-preset の transaction 化とアトミック保存
+
+`receiver/input_server.py`: `_config_io_lock` を `threading.RLock` に変更し、
+mutation 全体を保持したまま内側で public load/save ヘルパーを呼べるように
+した。新設の `_atomic_write_json()`（対象ファイルと同一ディレクトリの
+temp file に書き込み後 `os.replace`、失敗時は temp file を best-effort
+削除）を `save_presets`/`save_layout_presets`、および上記8の
+receiver-local sender-config merge の保存にも使用。preset/layout-preset の
+POST/DELETE それぞれの read-modify-write 全体を1つの outer
+`_config_io_lock` transaction にし、broadcast/log は transaction 成功・
+lock 解放後にのみ行う。旧 preset のフラット形式 migration
+（`load_presets` 内、`_PRESET_TYPES` に一致しないキーがあれば
+`{"keyboard":{},"leverless":{},"controller":{}}` へ変換）の書き戻しも
+`_atomic_write_json` 経由に変更（Codex レビューでの整合性修正）。
+`tests/test_receiver_config_transactions.py` の `AtomicWriteJsonTests`
+（3件）で round-trip・temp file が対象ディレクトリに作られること・
+replace 失敗時に temp file が残らないことを、`PresetTransactionTests`/
+`LayoutPresetTransactionTests`（各2件、二重 thread + 最初の書き込みが
+transaction 保持中に待機する決定的な同期フックで検証、sleep による
+アサーションなし）で並行 add/delete・update が互いに失われないことを検証。
+JSON shape/path・legacy 移行結果・API response・broadcast 内容は変更なし。
+
+#### 11. sender 可変 HTTP/monitor port のエンドツーエンド一貫性
+
+`sender/input_sender.py` の config デフォルトに `http_port: 8082`・
+`monitor_port: 8083` を追加し、1..65535 の整数/10進文字列のみ受け付け
+bool・範囲外・不正値は既定値へフォールバックする純粋な port 正規化
+ヘルパーを追加、HTTP/monitor サーバー起動前に適用（`tests/test_sender_ports.py`
+9件で単体検証）。`sender/sender_gui.html` は読み込んだ config を保持し、
+`monitor_port` を同じ規則で正規化した上で input monitor 接続先に使用、
+初期化は config 読み込み完了を待ってから最初の monitor 接続を行う
+（既存の2秒再接続は選択済み port を再利用）。`start_sender.bat` は
+git pull 後・firewall/browser 起動前に既定 8082/8083 を設定し、Main PC 実
+`config/sender_config.json` が存在すれば安全に読み取って各 port を
+1..65535 で検証、妥当な数値のみ batch 変数へ反映（壊れている/存在しない
+場合は既定のまま、config を eval/実行しない）。firewall の `localport` と
+自動で開く `http://localhost:<http_port>/` の両方に反映後の変数を使用。
+`tests/test_sender_gui_static.py`（4件）で GUI の読み込み順・port 使用を、
+`tests/test_launcher_batch_static.py` の残り6件で launcher の既定値/
+config 由来変数の静的使用（netsh/start 実行なし）を検証。既定 port・
+config keys・管理者昇格・pull/install/start 順は変更なし。
+`POST /api/config` は引き続き `http_port`/`monitor_port` を無視し
+（手動ファイル編集 + 再起動が port 変更手段）、README/docs/api.md の
+「8082/8083 固定」記述を更新。
+
+#### 12. 中核常駐フローの regression test
+
+上記1〜11のテストに加え、`tests/test_monitor_ws.py`・`tests/test_raw_mouse.py`・
+`tests/test_gamepad.py`・`tests/test_standalone_queue.py`・
+`tests/test_receiver_restart.py`・`tests/test_receiver_config_transactions.py`・
+`tests/test_sender_ports.py`・`tests/test_sender_gui_static.py`・
+`tests/test_launcher_batch_static.py` を新規追加（いずれも `unittest`
+標準ライブラリのみ、fake WebSocket/pygame/injector/HTTP と temp dir を使用、
+live hook・実 socket・実 config には触れない）。`tests/test_remote_control.py`
+にも本アーカイブの1・2・6項のクラスを追加。coverage.py は開発時のみの
+参考指標として使用し、新規 runtime dependency・pytest・CI は追加していない。
+
+#### 13. 重複 `switchOverlayMode` と未参照 `_standalone` の削除
+
+`receiver/config_gui.html` の先に定義されていた `switchOverlayMode`
+（後の定義に上書きされていた重複、旧 `:1149-1162` 相当）を削除し、後方の
+実効定義のみを残した。`receiver/input_server.py` の `_standalone`
+（宣言・`global` エントリ・代入の3箇所、読み取り参照0件だった未使用
+状態）を削除し、restart cleanup 判定は既存の `_standalone_queue is not None`
+を使用。mode switch・standalone 分岐・single-file HTML 方針の挙動は
+変更なし。
 
 ### 2026-07-11: sender reconnect 時の子 Task を必ず cancel・回収する
 検証: `python -m py_compile sender\input_sender.py` OK、

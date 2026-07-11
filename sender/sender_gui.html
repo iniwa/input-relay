@@ -315,10 +315,28 @@ async function fetchStatus() {
   }
 }
 
+function normalizePort(value, defaultPort) {
+  if (typeof value === 'boolean') return defaultPort;
+  let candidate;
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    candidate = value;
+  } else if (typeof value === 'string' && /^[0-9]+$/.test(value.trim())) {
+    candidate = parseInt(value.trim(), 10);
+  } else {
+    return defaultPort;
+  }
+  return (candidate >= 1 && candidate <= 65535) ? candidate : defaultPort;
+}
+
+let loadedConfig = null;
+let monitorPort = 8083;
+
 async function loadConfig() {
   try {
     const res = await fetch(API + '/api/config');
     const cfg = await res.json();
+    loadedConfig = cfg;
+    monitorPort = normalizePort(cfg.monitor_port, 8083);
     document.getElementById('host').value = cfg.host || '';
     document.getElementById('port').value = cfg.port || 8765;
     document.getElementById('localName').value = cfg.local_name || '';
@@ -473,7 +491,7 @@ let monitorWs = null;
 const activeKeys = new Set();
 
 function connectMonitor() {
-  const wsUrl = `ws://${location.hostname}:8083/`;
+  const wsUrl = `ws://${location.hostname}:${monitorPort}/`;
   monitorWs = new WebSocket(wsUrl);
   monitorWs.onmessage = (e) => {
     try {
@@ -523,13 +541,17 @@ function updateMonitorDisplay() {
   }
 }
 
-// Init
-loadConfig();
-loadControllers();
-fetchStatus();
-connectMonitor();
-// Poll status every 3s
-pollTimer = setInterval(fetchStatus, 3000);
+// Init: config must finish loading (so monitorPort is normalized) before the
+// first monitor WebSocket connection attempt.
+async function initApp() {
+  await loadConfig();
+  loadControllers();
+  fetchStatus();
+  connectMonitor();
+  // Poll status every 3s
+  pollTimer = setInterval(fetchStatus, 3000);
+}
+initApp();
 </script>
 
 </body>

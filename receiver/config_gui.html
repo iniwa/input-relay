@@ -437,7 +437,7 @@
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="sender">Sender (Main PC)</div>
+  <div class="tab active" data-tab="sender">Sender設定 (Sub PC ローカルコピー)</div>
   <div class="tab" data-tab="keyboard">Keyboard レイアウト</div>
   <div class="tab" data-tab="leverless">Leverless レイアウト</div>
   <div class="tab" data-tab="controller">Controller レイアウト</div>
@@ -452,17 +452,23 @@
 <!-- Sender Config -->
 <div class="tab-content active" id="tab-sender">
   <h2>接続設定</h2>
+  <p class="hint">
+    ※ ここは Sub PC（このマシン）にローカル保存されているコピーです。
+    常駐中の Main PC sender はここを読みません。Main PC sender を実際に
+    設定変更するには、Main PC の Sender GUI/API（既定 http://&lt;Main PC
+    IP&gt;:8082/）を使ってください。
+  </p>
   <div class="form-group">
     <label>Sub PC IP</label>
     <input type="text" id="sender-host" placeholder="192.168.1.211">
   </div>
   <div class="form-group">
     <label>WebSocket ポート</label>
-    <input type="number" id="sender-port" value="8765">
+    <input type="number" id="sender-port" value="8888">
   </div>
-  <p class="hint">※ Sender の設定変更後は Sender の再起動が必要です</p>
+  <p class="hint">※ このコピーの保存は Main PC sender の動作に影響しません</p>
   <div class="btn-row">
-    <button class="btn-save" onclick="saveSenderConfig()">保存</button>
+    <button class="btn-save" onclick="saveSenderConfig()">保存 (ローカルコピー)</button>
   </div>
 
   <h2>ショートカットキー（Main PC）</h2>
@@ -915,8 +921,20 @@ async function restartServer() {
   if (!confirm('サーバーを再起動しますか？')) return;
   showStatus('サーバーを再起動しています...', true);
   try {
-    await fetch('/api/restart', { method: 'POST' });
-  } catch {}
+    const res = await fetch('/api/restart', { method: 'DELETE' });
+    if (!res.ok) {
+      let msg = `再起動リクエストが失敗しました (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data && data.error) msg = data.error;
+      } catch {}
+      showStatus(msg, false);
+      return;
+    }
+  } catch (e) {
+    showStatus('再起動リクエストが失敗しました: ' + e, false);
+    return;
+  }
   setTimeout(() => { location.reload(); }, 2000);
 }
 
@@ -1148,22 +1166,6 @@ function applyOffset(section) {
     document.getElementById('ctrl-offset-col').value = 0;
     renderControllerTab();
     renderPreview();
-  }
-}
-
-// Switch overlay mode on actual overlay (via API)
-async function switchOverlayMode(mode) {
-  setPreviewMode(mode);
-  try {
-    const res = await fetch('/api/mode-switch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
-    });
-    const data = await res.json();
-    showStatus(data.ok ? `オーバーレイを ${mode.toUpperCase()} に切り替えました` : 'エラー: ' + data.error, data.ok);
-  } catch (e) {
-    showStatus('エラー: ' + e.message, false);
   }
 }
 
@@ -2383,7 +2385,7 @@ async function init() {
   });
 
   document.getElementById('sender-host').value = senderConfig.host || '';
-  document.getElementById('sender-port').value = senderConfig.port || 8765;
+  document.getElementById('sender-port').value = senderConfig.port || 8888;
 
   renderKbKeys();
   renderLeverless();
@@ -2404,7 +2406,12 @@ const DEBUG_AFTERGLOW_MS = 300;
 
 function connectDebug() {
   if (debugWs && debugWs.readyState < 2) return;
-  const port = senderConfig.port || 8765;
+  // Always use this receiver process's actual WS port (injected server-side
+  // into window.__WS_PORT__), never the receiver-local sender-config copy:
+  // that copy does not describe this receiver's own listening port.
+  const injectedPort = Number(window.__WS_PORT__);
+  const port = Number.isInteger(injectedPort) && injectedPort >= 1 && injectedPort <= 65535
+    ? injectedPort : 8888;
   const url = `ws://${location.hostname}:${port}/browser`;
   const statusEl = document.getElementById('debug-status');
   statusEl.textContent = `接続中... (${url})`;

@@ -39,11 +39,11 @@ Main PC (sender)              Sub PC (receiver)
 
 `start_standalone.bat` をダブルクリック。
 
-- 自動で `git pull`、依存パッケージのインストールを行い、サーバーを起動
+- 自動で `git pull`、依存パッケージ（`websockets` `pynput` `pygame`）の
+  インストールを行い、サーバーを起動
 - 設定 GUI がブラウザで自動的に開く
-- ゲームパッドも使う場合、現行 launcher では `pygame` を導入しないため、初回のみ
-  `python -m pip install pygame` を実行する（launcher 側の修正候補は
-  `docs/improvements.md` で管理）
+- ゲームパッド対応も launcher が `pygame` を自動導入するため、追加の手動
+  インストールは不要
 
 コマンドラインの場合:
 
@@ -109,9 +109,11 @@ Main PC で `http://localhost:8082/` の Sender GUI を使う。
 ### Sender GUI（Main PC）
 
 `http://localhost:8082/` では receiver 接続先、コントローラー選択、リモート表示、
-接続状態、入力モニタ、sender 再起動を操作できる。既定以外の HTTP/monitor port は
-サーバー本体では設定可能だが、launcher の firewall・自動ブラウザ起動と入力モニタが
-まだ追従しないため、通常は 8082/8083 を使う。
+接続状態、入力モニタ、sender 再起動を操作できる。`sender_config.json` の
+`http_port`/`monitor_port` を編集して sender を再起動すると、GUI の入力モニタ・
+`start_sender.bat` の firewall ルール・自動ブラウザ起動もその値に追従する
+（未設定・不正値は既定 8082/8083 に戻る）。sender の `POST /api/config` は
+`http_port`/`monitor_port` を受け付けないため、変更にはファイル編集 + 再起動が必要。
 
 ## モード切替
 
@@ -220,12 +222,10 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 
 ## 依存パッケージ
 
-各 bat ファイルが実行時依存を自動インストールする。例外として、現行の standalone
-launcher は `pygame` を導入しないため、単独モードでゲームパッドを使う場合だけ手動で
-追加する必要がある。
+各 bat ファイルが実行時依存を自動インストールする。
 
 | モード | パッケージ |
 |--------|-----------|
-| 単独モード | `websockets`, `pynput`, (`pygame`: ゲームパッド使用時) |
+| 単独モード | `websockets`, `pynput`, `pygame` |
 | 2PC Sender | `websockets`, `pynput`, `pygame` |
 | 2PC Receiver | `websockets` |

@@ -17,7 +17,7 @@ git pull
 echo.
 
 echo [3/4] Installing dependencies ...
-pip install websockets pynput >nul 2>&1
+pip install websockets pynput pygame >nul 2>&1
 echo.
 
 echo [4/4] Starting server (standalone) ...

@@ -28,6 +28,8 @@ RESCAN_INTERVAL = 2.0      # 切断時の再 init 間隔 (秒)
 DISCONNECT_SLEEP = 0.1     # 接続なし時のスリープ (秒)
 _AXIS_RAW_SENTINEL = 2.0   # 軸範囲 (-1..1) 外、初回判定用
 _POLL_INTERVAL = 1.0 / POLL_HZ
+_BACKOFF_INITIAL = 0.1     # session 失敗時の初期リトライ待ち (秒)
+_BACKOFF_MAX = 2.0         # リトライ待ちの上限 (秒)
 
 
 class Gamepad:
@@ -68,9 +70,9 @@ class Gamepad:
     # --- internal ---
     def _load_pygame(self):
         import pygame as pg
+        self._pygame = pg
         pg.init()
         pg.joystick.init()
-        self._pygame = pg
 
     def _scan(self) -> list[dict]:
         pg = self._pygame
@@ -104,31 +106,72 @@ class Gamepad:
         }))
 
     def run(self) -> None:
-        """Blocking poll loop. Run in a daemon thread."""
-        self._load_pygame()
-        state = {
-            "joy": None,
-            "joy_id": -1,
-            "prev_buttons": {},
-            "prev_axes": {},       # leverless: threshold-based axis state
-            "prev_axes_raw": {},   # controller: raw float values
-            "last_reinit": 0.0,
-        }
-        self._scan()
-        try:
-            self._loop(state)
-        finally:
-            if self._pygame is not None:
-                try:
-                    self._pygame.joystick.quit()
-                    self._pygame.quit()
-                except Exception:
-                    logger.debug("pygame shutdown failed", exc_info=True)
+        """Blocking poll loop. Run in a daemon thread.
 
-    def _loop(self, state: dict) -> None:
+        Each iteration of this outer loop is one pygame "session": init,
+        scan, then poll until either `is_running()` goes false (shutdown) or
+        something raises (pygame init/scan/event-pump/joystick
+        creation-init/getters are all uncaught by design inside `_loop`).
+        A failed session is torn down best-effort, any buffered controller
+        state is neutralized (so a stuck-looking key/axis on the overlay
+        never survives a crash), and — while still running — retried with
+        exponential backoff (0.1s to 2.0s). Backoff resets to 0.1s once a
+        session has proven itself by actually reaching the polling loop.
+        """
+        backoff = _BACKOFF_INITIAL
+        while self._is_running():
+            state = {
+                "joy": None,
+                "joy_id": -1,
+                "prev_buttons": {},
+                "prev_axes": {},       # leverless: threshold-based axis state
+                "prev_axes_raw": {},   # controller: raw float values
+                "last_reinit": 0.0,
+            }
+            reached_polling = [False]
+            try:
+                self._load_pygame()
+                self._scan()
+                self._loop(state, on_polling=lambda: reached_polling.__setitem__(0, True))
+            except Exception:
+                logger.exception("gamepad session failed; will retry")
+            finally:
+                try:
+                    self._neutralize_state(state)
+                except Exception:
+                    logger.exception("neutral event emission failed during session teardown")
+                finally:
+                    self._reset_joy_buffers(state)
+                    state["joy"] = None
+                    self._teardown_pygame()
+
+            if reached_polling[0]:
+                backoff = _BACKOFF_INITIAL
+            if not self._is_running():
+                break
+            time.sleep(backoff)
+            backoff = min(backoff * 2, _BACKOFF_MAX)
+
+    def _teardown_pygame(self) -> None:
+        if self._pygame is None:
+            return
+        pg = self._pygame
+        try:
+            pg.joystick.quit()
+        except Exception:
+            logger.debug("pygame joystick quit failed", exc_info=True)
+        try:
+            pg.quit()
+        except Exception:
+            logger.debug("pygame quit failed", exc_info=True)
+        self._pygame = None
+
+    def _loop(self, state: dict, on_polling: Callable[[], None] | None = None) -> None:
         pg = self._pygame
         while self._is_running():
             pg.event.pump()
+            if on_polling is not None:
+                on_polling()
 
             if self._consume_refresh():
                 self._scan()
@@ -161,10 +204,14 @@ class Gamepad:
                 print(f"[Gamepad] Connected: {state['joy'].get_name()} (ID: {use_id})")
 
             if target_id != state["joy_id"] and target_id < count:
+                # Neutralize the outgoing controller's buffered state before
+                # replacing the joystick reference, so any key_up/axis-zero
+                # events refer to the controller that was actually active.
+                self._neutralize_state(state)
+                self._reset_joy_buffers(state)
                 state["joy"] = pg.joystick.Joystick(target_id)
                 state["joy"].init()
                 state["joy_id"] = target_id
-                self._reset_joy_buffers(state)
                 print(f"[Gamepad] Switched to: {state['joy'].get_name()} (ID: {target_id})")
 
             self._emit_state(state)
@@ -221,6 +268,42 @@ class Gamepad:
                     "timestamp": time.time(),
                 }))
 
+    def _neutralize_state(self, state: dict) -> None:
+        """Emit the exact key_up for every active button/hat/threshold-axis
+        and an axis_update(0) for every non-neutral tracked raw axis, based
+        on the currently buffered state. Must run before that state is
+        cleared -- called on disconnect, controller switch, session
+        exception, and shutdown, so a displayed key/axis can never remain
+        stuck just because the underlying state buffer was silently reset."""
+        prev_buttons = state["prev_buttons"]
+        prev_axes = state["prev_axes"]
+        prev_axes_raw = state["prev_axes_raw"]
+
+        for i, val in prev_buttons.items():
+            if val:
+                self._emit_btn(f"btn_{i}", False)
+
+        for key, value in prev_axes.items():
+            if isinstance(value, tuple):
+                hx, hy = value
+                idx = str(key)[len("hat_"):]
+                if hx != 0:
+                    self._emit_btn(f"hat_{idx}_{'left' if hx < 0 else 'right'}", False)
+                if hy != 0:
+                    self._emit_btn(f"hat_{idx}_{'down' if hy < 0 else 'up'}", False)
+            elif value != 0:
+                self._emit_btn(f"axis_{key}_{'neg' if value < 0 else 'pos'}", False)
+
+        for i, raw in prev_axes_raw.items():
+            if raw != 0:
+                self._emit(json.dumps({
+                    "type": "axis_update",
+                    "axis": i,
+                    "value": 0,
+                    "source": "gamepad",
+                    "timestamp": time.time(),
+                }))
+
     @staticmethod
     def _reset_joy_buffers(state: dict) -> None:
         state["prev_buttons"].clear()
@@ -228,5 +311,8 @@ class Gamepad:
         state["prev_axes_raw"].clear()
 
     def _reset_joy(self, state: dict) -> None:
-        state["joy"] = None
+        """Disconnect/refresh-switch path: neutralize active buffered state,
+        clear the buffers, then release the joystick reference."""
+        self._neutralize_state(state)
         self._reset_joy_buffers(state)
+        state["joy"] = None

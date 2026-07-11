@@ -33,8 +33,16 @@ _ws_port = 8888  # WebSocket port, set in main()
 _http_server = None  # ThreadingHTTPServer instance, for shutdown
 
 # Standalone mode
-_standalone = False
 _standalone_queue = None  # asyncio.Queue, set in main() when standalone
+_STANDALONE_QUEUE_MAXSIZE = 500
+_STANDALONE_OVERFLOW_LOG_INTERVAL = 5.0  # seconds; rate-limit overflow warnings
+_standalone_last_overflow_log = 0.0
+
+# Restart guard: only the first DELETE /api/restart schedules the restart
+# thread; repeated calls while one is pending are no-ops that still return
+# {"ok": true} (idempotent from the caller's point of view).
+_restart_lock = threading.Lock()
+_restart_pending = False
 
 # Remote control state
 remote_control_enabled = False
@@ -58,7 +66,29 @@ LAYOUT_PRESETS_PATH = CONFIG_DIR / "layout_presets.json"
 
 # LAN 公開前提のため、複数クライアントからの同時 POST/DELETE を直列化。
 # どの path も同じロックで保護 (頻度が低いので単一ロックで十分)。
-_config_io_lock = threading.Lock()
+# RLock: 1 mutation 全体 (read-modify-write) を outer transaction として
+# 保持したまま、内側で public load/save ヘルパーを呼べるようにするため。
+_config_io_lock = threading.RLock()
+
+
+def _atomic_write_json(path, data):
+    """Write JSON to `path` atomically: write to a temp file in the same
+    directory, then os.replace it into place. Must be called while already
+    holding `_config_io_lock`. Best-effort removes the temp file on failure."""
+    import tempfile
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2, ensure_ascii=False))
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.remove(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def load_config():
@@ -88,16 +118,14 @@ def load_presets():
                 for t in _PRESET_TYPES:
                     if t in p:
                         migrated[t][name] = {t: p[t]}
-            PRESETS_PATH.write_text(
-                json.dumps(migrated, indent=2, ensure_ascii=False), encoding="utf-8",
-            )
+            _atomic_write_json(PRESETS_PATH, migrated)
             return migrated
         return data
 
 
 def save_presets(data):
     with _config_io_lock:
-        PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _atomic_write_json(PRESETS_PATH, data)
 
 
 def load_layout_presets():
@@ -114,7 +142,17 @@ def load_layout_presets():
 
 def save_layout_presets(data):
     with _config_io_lock:
-        LAYOUT_PRESETS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _atomic_write_json(LAYOUT_PRESETS_PATH, data)
+
+
+def _inject_ws_port(html, ws_port):
+    """Inject `window.__WS_PORT__=<int>` into `<head>` so config_gui.html's
+    debug WebSocket always connects to this receiver process's actual WS
+    port, never a stale/guessed fallback. Pure string transform; does not
+    touch any other static-file serving."""
+    return html.replace(
+        "<head>", f"<head><script>window.__WS_PORT__={int(ws_port)};</script>", 1,
+    )
 
 
 def _client_label(handler):
@@ -129,23 +167,33 @@ def _client_label(handler):
     return f"{ip} ({tag})" if tag else ip
 
 
-async def broadcast_to_browsers(message):
-    """Send message to each browser client independently.
+async def _send_to_browser(client, message):
+    """Bounded send to a single browser client. Returns the client if it
+    should be dropped (timeout/error), else None."""
+    try:
+        await asyncio.wait_for(client.send(message), timeout=_BROWSER_SEND_TIMEOUT)
+        return None
+    except Exception:
+        return client
 
-    A slow/stalled client must not delay delivery to the others; failed
-    or timed-out clients are dropped from browser_clients rather than
-    retried.
+
+async def broadcast_to_browsers(message):
+    """Send message to each browser client independently and concurrently.
+
+    A slow/stalled client must not delay delivery to the others; per-client
+    sends are started concurrently and this awaits all of them before
+    returning, so callers invoking broadcasts sequentially still get
+    per-client message ordering. Failed or timed-out clients are dropped
+    from browser_clients rather than retried.
     """
     async with _browser_lock:
         clients = list(browser_clients)
     if not clients:
         return
-    dead = []
-    for c in clients:
-        try:
-            await asyncio.wait_for(c.send(message), timeout=_BROWSER_SEND_TIMEOUT)
-        except Exception:
-            dead.append(c)
+    results = await asyncio.gather(
+        *(_send_to_browser(c, message) for c in clients)
+    )
+    dead = [c for c in results if c is not None]
     if dead:
         async with _browser_lock:
             for c in dead:
@@ -321,15 +369,16 @@ def _api_post_presets(handler, body):
     data = json.loads(body)
     ptype = data.get("type", "keyboard")
     name = data["name"]
-    presets = load_presets()
-    if ptype not in presets:
-        presets[ptype] = {}
-    presets[ptype][name] = {
-        ptype: data[ptype],
-        "layout": data.get("layout", {}),
-        "inputHistory": data.get("inputHistory", {}),
-    }
-    save_presets(presets)
+    with _config_io_lock:
+        presets = load_presets()
+        if ptype not in presets:
+            presets[ptype] = {}
+        presets[ptype][name] = {
+            ptype: data[ptype],
+            "layout": data.get("layout", {}),
+            "inputHistory": data.get("inputHistory", {}),
+        }
+        save_presets(presets)
     print(f"[API] preset saved: {ptype}/{name} by {_client_label(handler)}")
     _broadcast_change("presets", {"type": ptype, "name": name, "op": "save"})
     return {"ok": True}
@@ -339,29 +388,38 @@ def _api_post_layout_presets(handler, body):
     data = json.loads(body)
     ptype = data.get("type", "keyboard")
     name = data["name"]
-    presets = load_layout_presets()
-    if ptype not in presets:
-        presets[ptype] = {}
-    presets[ptype][name] = {
-        "layout": data.get("layout", {}),
-        "inputHistory": data.get("inputHistory", {}),
-    }
-    save_layout_presets(presets)
+    with _config_io_lock:
+        presets = load_layout_presets()
+        if ptype not in presets:
+            presets[ptype] = {}
+        presets[ptype][name] = {
+            "layout": data.get("layout", {}),
+            "inputHistory": data.get("inputHistory", {}),
+        }
+        save_layout_presets(presets)
     print(f"[API] layout-preset saved: {ptype}/{name} by {_client_label(handler)}")
     _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "save"})
     return {"ok": True}
 
 
 def _api_post_sender_config(handler, body):
+    """Receiver-local compatibility endpoint: merges only `host`/`port` into
+    the existing receiver-local sender_config.json copy, preserving all other
+    keys untouched. This never reaches the resident Main PC sender process
+    (see the sender GUI/API on port 8082 for that)."""
     data = json.loads(body)
     sender_cfg_path = CONFIG_DIR / "sender_config.json"
     with _config_io_lock:
-        sender_cfg_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    print(f"[API] sender-config updated by {_client_label(handler)}")
-    _broadcast_change("sender_config", {"data": data})
+        if sender_cfg_path.exists():
+            merged = json.loads(sender_cfg_path.read_text(encoding="utf-8"))
+        else:
+            merged = {}
+        for key in ("host", "port"):
+            if key in data:
+                merged[key] = data[key]
+        _atomic_write_json(sender_cfg_path, merged)
+    print(f"[API] sender-config (receiver-local copy) updated by {_client_label(handler)}")
+    _broadcast_change("sender_config", {"data": merged})
     return {"ok": True}
 
 
@@ -412,9 +470,10 @@ def _api_delete_presets(handler, body):
     data = json.loads(body)
     ptype = data.get("type", "keyboard")
     name = data["name"]
-    presets = load_presets()
-    presets.get(ptype, {}).pop(name, None)
-    save_presets(presets)
+    with _config_io_lock:
+        presets = load_presets()
+        presets.get(ptype, {}).pop(name, None)
+        save_presets(presets)
     print(f"[API] preset deleted: {ptype}/{name} by {_client_label(handler)}")
     _broadcast_change("presets", {"type": ptype, "name": name, "op": "delete"})
     return {"ok": True}
@@ -424,17 +483,23 @@ def _api_delete_layout_presets(handler, body):
     data = json.loads(body)
     ptype = data.get("type", "keyboard")
     name = data["name"]
-    presets = load_layout_presets()
-    presets.get(ptype, {}).pop(name, None)
-    save_layout_presets(presets)
+    with _config_io_lock:
+        presets = load_layout_presets()
+        presets.get(ptype, {}).pop(name, None)
+        save_layout_presets(presets)
     print(f"[API] layout-preset deleted: {ptype}/{name} by {_client_label(handler)}")
     _broadcast_change("layout_presets", {"type": ptype, "name": name, "op": "delete"})
     return {"ok": True}
 
 
 def _api_delete_restart(handler, body):
-    # _restart_server は 0.5s 待ってから execv するため、レスポンス送信が先行する
-    threading.Thread(target=_restart_server, daemon=True).start()
+    # _restart_server は 0.5s 待ってから execv するため、レスポンス送信が先行する。
+    # 連打された DELETE は同じ再起動スレッドに相乗りさせ、二重起動を防ぐ。
+    global _restart_pending
+    with _restart_lock:
+        if not _restart_pending:
+            _restart_pending = True
+            threading.Thread(target=_restart_server, daemon=True).start()
     return {"ok": True}
 
 
@@ -516,7 +581,12 @@ class OverlayHandler(BaseHTTPRequestHandler):
             path = "config_gui.html"
         file_path = self._resolve_static_path(path)
         if file_path is not None and file_path.exists() and file_path.is_file():
-            content = file_path.read_bytes()
+            if path == "config_gui.html":
+                content = _inject_ws_port(
+                    file_path.read_text(encoding="utf-8"), _ws_port,
+                ).encode("utf-8")
+            else:
+                content = file_path.read_bytes()
             ct = "text/html"
             if path.endswith(".json"):
                 ct = "application/json"
@@ -573,10 +643,34 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
 
 def _restart_server():
-    """Restart the server process after a short delay."""
+    """Restart the server process after a short delay.
+
+    Runs on its own daemon thread, started only once by
+    `_api_delete_restart`'s guard: the 0.5s sleep lets the HTTP response go
+    out first, then tracked Remote Control input is released and standalone
+    capture is stopped (each best-effort, independent of the other) before
+    `os.execv`. If `os.execv` itself fails, the restart guard is reset so a
+    later DELETE can retry.
+    """
+    global _restart_pending
     time.sleep(0.5)
     print("[Server] Restarting...")
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    try:
+        _set_rc_state(False)
+    except Exception:
+        logger.error("restart: failed to release remote-control input", exc_info=True)
+    if _standalone_queue is not None:
+        try:
+            import standalone_capture
+            standalone_capture.stop()
+        except Exception:
+            logger.error("restart: failed to stop standalone capture", exc_info=True)
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception:
+        logger.error("restart: os.execv failed", exc_info=True)
+        with _restart_lock:
+            _restart_pending = False
 
 
 def start_http_server(port):
@@ -617,16 +711,16 @@ async def browser_handler(ws):
     async with _browser_lock:
         browser_clients.add(ws)
     print(f"[Browser] Client connected ({len(browser_clients)} total)")
-    config = load_config()
     try:
-        await ws.send(json.dumps({"type": "config", "data": config}))
-    except websockets.ConnectionClosed:
-        async with _browser_lock:
-            browser_clients.discard(ws)
-        return
-    try:
+        config = load_config()
+        await asyncio.wait_for(
+            ws.send(json.dumps({"type": "config", "data": config})),
+            timeout=_BROWSER_SEND_TIMEOUT,
+        )
         async for msg in ws:
             pass
+    except websockets.ConnectionClosed:
+        pass
     finally:
         async with _browser_lock:
             browser_clients.discard(ws)
@@ -665,12 +759,14 @@ async def sender_handler(ws):
                 _set_rc_state(event.get("enabled", False), mark_synchronized=True)
                 continue
 
+            # Remote control: inject as OS input first (state check + inject
+            # + tracked-state update happen atomically inside
+            # _rc_inject_event), so a stalled browser send can never delay
+            # injection.
+            _rc_inject_event(event)
+
             # Broadcast to browsers (existing behavior)
             await broadcast_to_browsers(msg)
-
-            # Remote control: inject as OS input (state check + inject +
-            # tracked-state update happen atomically inside _rc_inject_event)
-            _rc_inject_event(event)
     finally:
         with _rc_lock:
             if sender_ws is ws:
@@ -699,9 +795,27 @@ async def ws_handler(ws):
 
 
 def _standalone_on_event(msg):
-    """Callback from standalone_capture - puts event on async queue."""
-    if _standalone_queue:
-        _standalone_queue.put_nowait(msg)
+    """Callback from standalone_capture - puts event on the bounded async
+    queue. Runs on the asyncio loop thread (standalone_capture._emit uses
+    loop.call_soon_threadsafe to invoke this), so queue mutation here never
+    races with the consumer in _standalone_broadcaster.
+
+    On overflow, the queued backlog is sacrificed in favor of one
+    `input_reset` message plus the newest event: a missing key-up/neutral
+    axis left stuck on the overlay is worse than dropping stale history.
+    """
+    global _standalone_last_overflow_log
+    if not _standalone_queue:
+        return
+    if _standalone_queue.full():
+        now = time.time()
+        if now - _standalone_last_overflow_log >= _STANDALONE_OVERFLOW_LOG_INTERVAL:
+            logger.warning("standalone queue overflow (maxsize=%d): dropping backlog", _STANDALONE_QUEUE_MAXSIZE)
+            _standalone_last_overflow_log = now
+        while not _standalone_queue.empty():
+            _standalone_queue.get_nowait()
+        _standalone_queue.put_nowait(json.dumps({"type": "input_reset"}))
+    _standalone_queue.put_nowait(msg)
 
 
 async def _standalone_broadcaster():
@@ -712,10 +826,9 @@ async def _standalone_broadcaster():
 
 
 async def main(ws_port=8888, http_port=8080, standalone=False):
-    global _ws_loop, _ws_port, _standalone, _standalone_queue
+    global _ws_loop, _ws_port, _standalone_queue
     _ws_loop = asyncio.get_event_loop()
     _ws_port = ws_port
-    _standalone = standalone
 
     http_thread = threading.Thread(
         target=start_http_server, args=(http_port,), daemon=True
@@ -724,7 +837,7 @@ async def main(ws_port=8888, http_port=8080, standalone=False):
 
     if standalone:
         import standalone_capture
-        _standalone_queue = asyncio.Queue()
+        _standalone_queue = asyncio.Queue(maxsize=_STANDALONE_QUEUE_MAXSIZE)
         standalone_capture.start(_ws_loop, _standalone_on_event)
 
     print(f"[WS] Listening on port {ws_port}")

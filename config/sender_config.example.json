@@ -6,5 +6,7 @@
   "remote_overlay": {
     "enabled": true,
     "position": "top-left"
-  }
+  },
+  "http_port": 8082,
+  "monitor_port": 8083
 }

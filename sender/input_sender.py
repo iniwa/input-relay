@@ -63,7 +63,30 @@ _CONFIG_DEFAULTS = {
         "enabled": True,
         "position": "top-left",
     },
+    "http_port": DEFAULT_HTTP_PORT,
+    "monitor_port": DEFAULT_MONITOR_PORT,
 }
+
+
+def normalize_port(value, default):
+    """Return `value` as a valid TCP port (1..65535) if it is a plain int or
+    a base-10 numeric string in range; otherwise return `default`. `bool` is
+    rejected even though it is an `int` subclass, since a config value of
+    `true`/`false` is never a meaningful port."""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        candidate = value
+    elif isinstance(value, str):
+        s = value.strip()
+        if not s.isdigit():
+            return default
+        candidate = int(s)
+    else:
+        return default
+    if 1 <= candidate <= 65535:
+        return candidate
+    return default
 
 
 def _merge_defaults(loaded, defaults):
@@ -599,7 +622,7 @@ async def main():
         print("[Gamepad] Disabled by config")
 
     # Start HTTP server for GUI (ThreadingHTTPServer handles concurrent requests)
-    http_port = config.get("http_port", DEFAULT_HTTP_PORT)
+    http_port = normalize_port(config.get("http_port"), DEFAULT_HTTP_PORT)
     http_ctx = _build_http_context()
     http_thread = threading.Thread(
         target=http_api.start_http_server, args=(http_ctx, http_port), daemon=True,
@@ -607,7 +630,7 @@ async def main():
     http_thread.start()
 
     # Start monitor WebSocket, sender, and remote toggle handler concurrently
-    monitor_port = config.get("monitor_port", DEFAULT_MONITOR_PORT)
+    monitor_port = normalize_port(config.get("monitor_port"), DEFAULT_MONITOR_PORT)
     await asyncio.gather(
         _run_forever("sender", lambda: sender(config["host"], config["port"])),
         _run_forever("monitor_ws", lambda: _monitor.serve(monitor_port)),

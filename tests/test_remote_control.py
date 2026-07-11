@@ -15,6 +15,8 @@ _SENDER_DIR = Path(__file__).resolve().parent.parent / "sender"
 if str(_SENDER_DIR) not in sys.path:
     sys.path.insert(0, str(_SENDER_DIR))
 
+import websockets
+
 import input_injector
 import input_sender
 import input_server
@@ -850,6 +852,180 @@ class SenderTaskExceptionPropagationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             found, f"expected logger.error to log the unretrieved exception; calls={mock_error.call_args_list}"
         )
+
+
+class SlowFakeBrowserClient:
+    """FakeBrowserClient variant whose send() blocks on a gate, to simulate
+    a stalled browser connection with no real socket."""
+
+    def __init__(self, gate):
+        self.sent = []
+        self._gate = gate
+
+    async def send(self, msg):
+        await self._gate.wait()
+        self.sent.append(msg)
+
+
+class BroadcastToBrowsersConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    """broadcast_to_browsers must start per-client bounded sends
+    concurrently: one stalled client must not delay a healthy client's
+    delivery, and must be dropped after its own timeout."""
+
+    async def asyncSetUp(self):
+        input_server.browser_clients.clear()
+
+    async def asyncTearDown(self):
+        input_server.browser_clients.clear()
+
+    async def test_healthy_send_completes_before_stalled_client_timeout(self):
+        never = asyncio.Event()  # never set -> stalled client's send() never returns on its own
+        stalled = SlowFakeBrowserClient(never)
+        healthy = FakeBrowserClient()
+        input_server.browser_clients.add(stalled)
+        input_server.browser_clients.add(healthy)
+
+        with patch.object(input_server, "_BROWSER_SEND_TIMEOUT", 0.3):
+            task = asyncio.ensure_future(input_server.broadcast_to_browsers("hello"))
+            await asyncio.sleep(0.05)
+            # Healthy must have completed well before the stalled client's
+            # 0.3s timeout has elapsed, and before broadcast_to_browsers
+            # itself returns.
+            self.assertEqual(healthy.sent, ["hello"])
+            self.assertFalse(task.done())
+
+            await asyncio.wait_for(task, timeout=2.0)
+
+        self.assertNotIn(stalled, input_server.browser_clients)
+        self.assertIn(healthy, input_server.browser_clients)
+
+
+class SenderHandlerInjectsBeforeBroadcastCompletesTests(unittest.IsolatedAsyncioTestCase):
+    """sender_handler must perform RC injection before awaiting browser
+    delivery, so a stalled browser client can never delay injection."""
+
+    async def asyncSetUp(self):
+        self.fake = FakeInjector()
+        self._orig_injector = input_server.input_injector
+        input_server.input_injector = self.fake
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        input_server.browser_clients.clear()
+
+    async def asyncTearDown(self):
+        input_server.input_injector = self._orig_injector
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        input_server.browser_clients.clear()
+
+    async def test_injection_happens_before_stalled_browser_send_completes(self):
+        never = asyncio.Event()  # never set -> stalled browser send blocks until timeout
+        stalled = SlowFakeBrowserClient(never)
+        input_server.browser_clients.add(stalled)
+
+        conn = FakeSenderConn([
+            json.dumps({"type": "remote_control", "enabled": True}),
+            json.dumps({"type": "key_down", "key": "a", "vk": 65}),
+        ])
+
+        with patch.object(input_server, "_BROWSER_SEND_TIMEOUT", 0.3):
+            task = asyncio.ensure_future(input_server.sender_handler(conn))
+            await asyncio.sleep(0.05)
+            # Injection must already have happened even though the stalled
+            # browser send (and therefore sender_handler itself) is still
+            # pending.
+            self.assertEqual(self.fake.injected, [("vk", 65, True)])
+            self.assertFalse(task.done())
+
+            await asyncio.wait_for(task, timeout=2.0)
+
+
+class BrowserHandlerCleanupTests(unittest.IsolatedAsyncioTestCase):
+    """Once a browser websocket is added to browser_clients, every later
+    step (load_config, the initial bounded-timeout config send, and message
+    iteration) must run inside one try/finally that always discards it --
+    including on non-ConnectionClosed failures."""
+
+    async def asyncSetUp(self):
+        input_server.browser_clients.clear()
+
+    async def asyncTearDown(self):
+        input_server.browser_clients.clear()
+
+    async def test_successful_connect_sends_exactly_one_config_message(self):
+        class NormalClient:
+            def __init__(self):
+                self.sent = []
+
+            async def send(self, msg):
+                self.sent.append(msg)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        client = NormalClient()
+        await input_server.browser_handler(client)
+
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(json.loads(client.sent[0])["type"], "config")
+        self.assertNotIn(client, input_server.browser_clients)
+
+    async def test_connection_closed_on_initial_send_is_swallowed_and_discards_client(self):
+        class ClosingClient:
+            async def send(self, msg):
+                raise websockets.ConnectionClosed(None, None)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        client = ClosingClient()
+        await input_server.browser_handler(client)  # must not raise
+        self.assertNotIn(client, input_server.browser_clients)
+
+    async def test_non_connectionclosed_send_failure_still_discards_client(self):
+        class FailingSendClient:
+            async def send(self, msg):
+                raise OSError("boom")
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        client = FailingSendClient()
+        with self.assertRaises(OSError):
+            await input_server.browser_handler(client)
+        self.assertNotIn(client, input_server.browser_clients)
+
+    async def test_initial_send_has_bounded_timeout_and_still_discards_client(self):
+        gate = asyncio.Event()  # never set -> send() stalls forever
+
+        class StalledClient:
+            async def send(self, msg):
+                await gate.wait()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        client = StalledClient()
+        with patch.object(input_server, "_BROWSER_SEND_TIMEOUT", 0.05):
+            with self.assertRaises(asyncio.TimeoutError):
+                await input_server.browser_handler(client)
+        self.assertNotIn(client, input_server.browser_clients)
 
 
 if __name__ == "__main__":
