@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+import json
 import sys
 import threading
 import unittest
@@ -8,7 +11,12 @@ _RECEIVER_DIR = Path(__file__).resolve().parent.parent / "receiver"
 if str(_RECEIVER_DIR) not in sys.path:
     sys.path.insert(0, str(_RECEIVER_DIR))
 
+_SENDER_DIR = Path(__file__).resolve().parent.parent / "sender"
+if str(_SENDER_DIR) not in sys.path:
+    sys.path.insert(0, str(_SENDER_DIR))
+
 import input_injector
+import input_sender
 import input_server
 
 
@@ -152,12 +160,16 @@ class RemoteControlLifecycleTests(unittest.TestCase):
         input_server.input_injector = self.fake
         input_server.remote_control_enabled = False
         input_server._rc_active_identities.clear()
+        # These tests exercise the inject/lock lifecycle itself, not the
+        # sender-readiness gate, so start as already-synchronized.
+        input_server._sender_synchronized = True
         self.addCleanup(self._restore)
 
     def _restore(self):
         input_server.input_injector = self._orig_injector
         input_server.remote_control_enabled = False
         input_server._rc_active_identities.clear()
+        input_server._sender_synchronized = False
 
     def test_keydown_keyup_round_trip_tracks_and_clears(self):
         input_server.remote_control_enabled = True
@@ -277,6 +289,272 @@ class RemoteControlLifecycleTests(unittest.TestCase):
 
         self.assertEqual(self.fake.injected, [])
         self.assertEqual(input_server._rc_active_identities, set())
+
+
+class FakeSenderConn:
+    """Stand-in for the receiver-side sender websocket connection: async
+    iterable over a fixed list of already-JSON-encoded messages, plus an
+    async send() that just records what was sent. No real socket."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+        self.remote_address = ("127.0.0.1", 0)
+        self.sent = []
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._messages:
+            raise StopAsyncIteration
+        return self._messages.pop(0)
+
+    async def send(self, msg):
+        self.sent.append(msg)
+
+
+class SenderHandlerReadinessTests(unittest.TestCase):
+    """receiver's sender_handler / _sender_ready fail-closed gating, driven
+    through fake connections (no real websocket) with a fake injector."""
+
+    def setUp(self):
+        self.fake = FakeInjector()
+        self._orig_injector = input_server.input_injector
+        input_server.input_injector = self.fake
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_server.input_injector = self._orig_injector
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+
+    def test_event_before_state_message_is_not_injected(self):
+        # Even if a stale ON state were somehow left over, a fresh
+        # connection must stay fail-closed until it reports in itself.
+        input_server.remote_control_enabled = True
+        conn = FakeSenderConn([
+            json.dumps({"type": "key_down", "key": "a", "vk": 65}),
+        ])
+        asyncio.run(input_server.sender_handler(conn))
+        self.assertEqual(self.fake.injected, [])
+
+    def test_initial_explicit_false_keeps_injection_off(self):
+        conn = FakeSenderConn([
+            json.dumps({"type": "remote_control", "enabled": False}),
+            json.dumps({"type": "key_down", "key": "a", "vk": 65}),
+        ])
+        asyncio.run(input_server.sender_handler(conn))
+        self.assertEqual(self.fake.injected, [])
+        self.assertFalse(input_server.remote_control_enabled)
+
+    def test_initial_true_enables_and_injects_after_ack(self):
+        conn = FakeSenderConn([
+            json.dumps({"type": "remote_control", "enabled": True}),
+            json.dumps({"type": "key_down", "key": "a", "vk": 65}),
+        ])
+        asyncio.run(input_server.sender_handler(conn))
+        self.assertEqual(self.fake.injected, [("vk", 65, True)])
+
+    def test_disconnect_resets_readiness_and_disables_active_state(self):
+        conn = FakeSenderConn([
+            json.dumps({"type": "remote_control", "enabled": True}),
+        ])
+        asyncio.run(input_server.sender_handler(conn))
+        self.assertFalse(input_server.remote_control_enabled)
+        self.assertFalse(input_server._sender_synchronized)
+        self.assertIsNone(input_server.sender_ws)
+
+        # Reconnect: injection must not resume before the new connection
+        # synchronizes again, even though it is the "same" sender.
+        conn2 = FakeSenderConn([
+            json.dumps({"type": "key_down", "key": "b", "vk": 66}),
+        ])
+        asyncio.run(input_server.sender_handler(conn2))
+        self.assertEqual(self.fake.injected, [])
+
+
+class RemoteControlApiGatingTests(unittest.TestCase):
+    """_api_post_remote_control fail-closed / pending-enable behavior, with
+    _send_command_to_sender and _notify_sender_async replaced by fakes so no
+    asyncio loop or real websocket is needed."""
+
+    def setUp(self):
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        self._orig_send_command = input_server._send_command_to_sender
+        self._orig_notify_async = input_server._notify_sender_async
+        self.sent_commands = []
+        self.notified = []
+
+        def fake_send_command(data):
+            self.sent_commands.append(data)
+            return True
+
+        def fake_notify(data):
+            self.notified.append(data)
+
+        input_server._send_command_to_sender = fake_send_command
+        input_server._notify_sender_async = fake_notify
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_server.remote_control_enabled = False
+        input_server._rc_active_identities.clear()
+        input_server.sender_ws = None
+        input_server._sender_synchronized = False
+        input_server._send_command_to_sender = self._orig_send_command
+        input_server._notify_sender_async = self._orig_notify_async
+
+    def test_enable_rejected_when_no_sender(self):
+        body = json.dumps({"enabled": True}).encode()
+        with self.assertRaises(input_server.ApiError) as ctx:
+            input_server._api_post_remote_control(None, body)
+        self.assertEqual(ctx.exception.status, 409)
+        self.assertFalse(input_server.remote_control_enabled)
+        self.assertEqual(self.sent_commands, [])
+
+    def test_enable_rejected_when_connected_but_unsynchronized(self):
+        input_server.sender_ws = object()
+        input_server._sender_synchronized = False
+        body = json.dumps({"enabled": True}).encode()
+        with self.assertRaises(input_server.ApiError) as ctx:
+            input_server._api_post_remote_control(None, body)
+        self.assertEqual(ctx.exception.status, 409)
+        self.assertFalse(input_server.remote_control_enabled)
+        self.assertEqual(self.sent_commands, [])
+
+    def test_enable_with_synchronized_sender_sends_but_waits_for_ack(self):
+        input_server.sender_ws = object()
+        input_server._sender_synchronized = True
+        body = json.dumps({"enabled": True}).encode()
+
+        result = input_server._api_post_remote_control(None, body)
+
+        self.assertEqual(result, {"ok": True, "enabled": True})
+        self.assertEqual(self.sent_commands, [{"type": "remote_control", "enabled": True}])
+        # Must not be enabled locally until the sender itself acknowledges.
+        self.assertFalse(input_server.remote_control_enabled)
+
+        # Simulate the sender's acknowledgement (as sender_handler would
+        # apply it): only now does local state/injection become enabled.
+        input_server._set_rc_state(True, mark_synchronized=True)
+        self.assertTrue(input_server.remote_control_enabled)
+
+    def test_enable_send_failure_is_rejected_without_changing_state(self):
+        input_server.sender_ws = object()
+        input_server._sender_synchronized = True
+        input_server._send_command_to_sender = lambda data: (
+            self.sent_commands.append(data), False,
+        )[1]
+        body = json.dumps({"enabled": True}).encode()
+
+        with self.assertRaises(input_server.ApiError) as ctx:
+            input_server._api_post_remote_control(None, body)
+
+        self.assertEqual(ctx.exception.status, 502)
+        self.assertFalse(input_server.remote_control_enabled)
+
+    def test_disable_is_immediate_even_without_sender(self):
+        input_server.remote_control_enabled = True
+        body = json.dumps({"enabled": False}).encode()
+
+        result = input_server._api_post_remote_control(None, body)
+
+        self.assertEqual(result, {"ok": True, "enabled": False})
+        self.assertFalse(input_server.remote_control_enabled)
+        self.assertEqual(self.notified, [{"type": "remote_control", "enabled": False}])
+
+
+class FakeSenderTransport:
+    """Stand-in for the sender's outgoing websocket connection object used
+    inside input_sender.sender(): records every sent message and never
+    yields incoming messages. No real socket is opened."""
+
+    def __init__(self):
+        self.sent = []
+        self.first_send = asyncio.Event()
+
+    async def send(self, msg):
+        self.sent.append(msg)
+        self.first_send.set()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.Event().wait()  # never yields; connection stays "open"
+
+
+class FakeConnectContext:
+    """Stand-in for `websockets.connect(uri)`: an async context manager
+    that always yields the same fake transport."""
+
+    def __init__(self, ws):
+        self._ws = ws
+
+    def __call__(self, uri):
+        return self
+
+    async def __aenter__(self):
+        return self._ws
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class SenderAnnouncesExplicitStateOnConnectTests(unittest.IsolatedAsyncioTestCase):
+    """input_sender.sender() must send its own explicit remote_control state
+    (True or False) immediately after connecting, before normal queued input
+    handling starts -- never the old "send only when ON" behavior."""
+
+    def tearDown(self):
+        input_sender.remote.mode = False
+        input_sender.ws_status = "disconnected"
+        input_sender.ws_connection = None
+
+    async def _run_and_capture_first_send(self, initial_mode):
+        input_sender.remote.mode = initial_mode
+        fake_ws = FakeSenderTransport()
+
+        # Replace the two long-lived loop tasks with harmless stubs: this
+        # test only cares about what sender() sends immediately after
+        # connecting, not about the (module-global, cross-test-shared)
+        # event queue or receiver-message handling.
+        async def _noop_forever(*_args, **_kwargs):
+            await asyncio.Event().wait()
+
+        with patch.object(input_sender.websockets, "connect", FakeConnectContext(fake_ws)), \
+             patch.object(input_sender, "_send_loop", _noop_forever), \
+             patch.object(input_sender, "_recv_from_receiver", _noop_forever):
+            task = asyncio.ensure_future(input_sender.sender("dummyhost", 1))
+            try:
+                await asyncio.wait_for(fake_ws.first_send.wait(), timeout=5)
+            finally:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+                pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+        return fake_ws.sent
+
+    async def test_sends_explicit_false_on_connect(self):
+        sent = await self._run_and_capture_first_send(False)
+        self.assertEqual(sent, [json.dumps({"type": "remote_control", "enabled": False})])
+
+    async def test_sends_explicit_true_on_connect(self):
+        sent = await self._run_and_capture_first_send(True)
+        self.assertEqual(sent, [json.dumps({"type": "remote_control", "enabled": True})])
 
 
 if __name__ == "__main__":

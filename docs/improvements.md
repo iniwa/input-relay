@@ -20,15 +20,6 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ### 1. Remote Control の安全性
 
-- [ ] **【高】Remote Control の接続遷移を fail-closed にする**
-  - 現状: sender 不在でも `POST /api/remote-control` は先に ON にして成功を返す
-    (`receiver/input_server.py:166-172,278-287`)。後から接続した sender は自身が
-    OFF なら状態通知を送らない (`sender/input_sender.py:428-430`) ため、Main PC
-    が通常モードのまま入力を Sub PC に注入し得る。
-  - 対応案: sender 不在時の enable を拒否し、新規接続時は明示的な OFF 同期が済むまで
-    注入しない。sender の接続・切断・再接続を通した状態遷移テストを追加する。
-  - 制約: 正常時の GUI/API 操作と切断時 auto-disable を維持。
-
 - [ ] **【高】Remote Control 有効化時に入力抑止を表示待ちより先に確立する**
   - 現状: `sender/input_sender.py:147-166` は `remote.mode=True` の後、overlay の
     `show()` を低レベル mouse blocker と suppress listener より先に呼ぶ。初回
@@ -203,6 +194,66 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: Remote Control の接続遷移を fail-closed にする
+検証: `python -m py_compile sender\input_sender.py receiver\input_server.py` OK、
+`python -m unittest discover -s tests` OK（42件）、`python -m ruff check .` OK、
+`git diff --check` OK。Live 確認（実機での sender 接続・切断・API 呼び出し）は
+未実施（Main PC sender / Sub PC receiver が必要なため）。実 `config/*.json` の
+読み書きなし（このマシンに `config/sender_config.json` 自体が存在せず、
+`load_config()` はデフォルト値のコピーを返すのみ）。
+
+`receiver/input_server.py`: 新設の `_sender_synchronized`（bool、`_rc_lock` で
+保護）を追加。sender 接続確立時に `sender_ws` と併せて `False` にリセットし
+（stale な `remote_control_enabled` が残っていても fail-closed）、
+sender からの `remote_control` メッセージ（唯一の同期確立根拠）受信時にのみ
+`_set_rc_state(enabled, mark_synchronized=True)` で `True` にする。切断時は
+`finally` 内で `sender_ws`/`_sender_synchronized` を同一ロック内でリセットし、
+RC が有効だった場合は追加で無効化する。`_rc_inject_event` は
+`remote_control_enabled` に加えて `_sender_synchronized` も必須条件にした。
+
+`/api/remote-control` の POST を有効化/無効化で分岐: 無効化 (`enabled: false`)
+は sender の有無に関わらず即座に `_set_rc_state(False)` してから
+`_notify_sender_async`（結果を待たない best-effort 通知）を送る。有効化
+(`enabled: true`) は `_sender_ready()`（接続済みかつ同期済み）でなければ
+新設の `ApiError`（HTTP status 付き例外）で 409 を返し、状態変更・コマンド送信
+を一切行わない。準備済みなら `_send_command_to_sender`（HTTP ハンドラスレッドから
+`asyncio.run_coroutine_threadsafe` + 1 秒の bounded `.result()` 待ちで、
+制御プレーンのみ・入力経路は塞がない）で送信するが、成功してもローカルの
+`remote_control_enabled` はまだ変更しない。実際の有効化は sender からの
+状態報告（sender_handler 経由の `_set_rc_state(..., mark_synchronized=True)`）
+を受けて初めて行われ、送信自体が失敗すれば 502 を返し状態も変えない。
+`_dispatch` は `ApiError` を専用に捕捉し `{"error": ...}` を該当 status で返す
+（`{ok: false}` + 200 にはしない）。
+
+`sender/input_sender.py`: 接続確立直後の状態通知を `if remote.mode:` の
+条件分岐から常時送信に変更（`await ws.send(...)` は enabled の True/False
+どちらでも必ず、通常入力の送信/受信ループ開始より前に実行）。
+
+`receiver/config_gui.html`: `toggleRemoteControl` が `res.ok` を確認し、
+非 2xx 時は `data.error` をステータス表示するだけでボタン状態は変えないよう
+修正（成功時は従来通り要求値を暫定表示し、実際の確定は
+`remote_control_state` ブロードキャストに委ねる）。
+
+`docs/api.md`: `POST /api/remote-control` の有効化/無効化の非対称な挙動
+（fail-closed の 409/502、pending-enable、best-effort disable notify）と、
+sender→receiver `remote_control` メッセージが「同期確立の唯一の根拠」であり
+接続直後に ON/OFF いずれでも必ず送られる点を追記。
+
+`tests/test_remote_control.py` に追加（既存 17 件 + 新規 25 件 = 42 件）:
+`SenderHandlerReadinessTests`（fake の sender 接続で
+`sender_handler` を駆動: 状態メッセージ受信前は stale な enabled=True でも
+注入されないこと、初回 false 受信で OFF 維持、初回 true 受信後にのみ注入、
+切断でのリセットと再接続後の再同期要求）、`RemoteControlApiGatingTests`
+（`_send_command_to_sender`/`_notify_sender_async` を fake に差し替え、
+sender 不在/未同期時の 409・状態不変・コマンド未送信、同期済み時の送信は
+するがローカル enable は ack までしないこと、送信失敗時の 502、無効化が
+sender 不在でも即座に効くこと）、`SenderAnnouncesExplicitStateOnConnectTests`
+（`websockets.connect` と `_send_loop`/`_recv_from_receiver` を fake/no-op に
+差し替えて `sender()` を駆動し、接続直後の最初の送信が enabled True/False
+いずれの場合も明示的な `remote_control` メッセージであることを確認）。
+いずれも実ソケット・実 asyncio イベントループの共有状態に依存しない
+fake/seam のみを使用。
 
 ### 2026-07-11: 押下中入力を実 VK 単位かつ原子的に追跡して stuck key を防ぐ
 検証: `python -m py_compile receiver\input_server.py receiver\input_injector.py` OK、

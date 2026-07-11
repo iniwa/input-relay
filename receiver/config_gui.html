@@ -932,6 +932,12 @@ async function toggleRemoteControl() {
       body: JSON.stringify({ enabled: newState }),
     });
     const data = await res.json();
+    if (!res.ok) {
+      showStatus(data.error || 'Remote Control 切替失敗', false);
+      return;
+    }
+    // ON への切替は sender の応答 (remote_control_state ブロードキャスト) で
+    // 確定するまで実際には有効化されない。ボタンは要求値を暫定表示する。
     updateRcButton(data.enabled);
   } catch (e) {
     showStatus('Remote Control 切替失敗', false);

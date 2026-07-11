@@ -425,9 +425,10 @@ async def sender(host, port):
                 _reconnect_event.clear()
                 print("[Sender] Connected!")
 
-                # Notify receiver of current remote mode state
-                if remote.mode:
-                    await ws.send(json.dumps({"type": "remote_control", "enabled": True}))
+                # Always report our explicit current remote mode state before
+                # any queued input is sent, so the receiver never assumes ON
+                # by default (an explicit False keeps receiver injection off).
+                await ws.send(json.dumps({"type": "remote_control", "enabled": remote.mode}))
 
                 # Run send loop and receive listener concurrently
                 send_task = asyncio.ensure_future(_send_loop(ws))

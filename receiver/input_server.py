@@ -43,6 +43,12 @@ _rc_lock = threading.Lock()
 # input_injector.replay_event(): ("vk", <int>) or ("mouse", <name>).
 # Never derived from the display `key` string (see _rc_inject_event).
 _rc_active_identities = set()
+# True only once the *currently connected* sender has sent its own explicit
+# remote_control state message. A fresh connection (and any disconnect)
+# resets this to False, so stale/leftover `remote_control_enabled` can never
+# by itself cause injection (see _rc_inject_event / sender_handler).
+_sender_synchronized = False
+_RC_SEND_TIMEOUT = 1.0  # seconds; bounded wait on the control plane only, never the input path
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_DIR = OVERLAY_DIR.parent / "config"
@@ -167,15 +173,48 @@ def _broadcast_change(kind, extra):
 
 
 async def _send_to_sender(data):
-    """Send a message back to the sender over the existing WebSocket."""
+    """Send a message back to the sender over the existing WebSocket.
+    Returns whether the send actually succeeded."""
     if sender_ws:
         try:
             await sender_ws.send(json.dumps(data))
+            return True
         except Exception:
             logger.debug("send to sender failed", exc_info=True)
+    return False
 
 
-def _set_rc_state(enabled):
+def _send_command_to_sender(data):
+    """Send a control message to the sender and wait (bounded) for the send
+    itself to complete, so an HTTP handler thread can learn whether the
+    command actually reached the sender before deciding success/failure.
+    This is the low-frequency control plane only; it must never be used on
+    the input event path."""
+    if _ws_loop is None:
+        return False
+    future = asyncio.run_coroutine_threadsafe(_send_to_sender(data), _ws_loop)
+    try:
+        return future.result(timeout=_RC_SEND_TIMEOUT)
+    except Exception:
+        return False
+
+
+def _notify_sender_async(data):
+    """Best-effort, fire-and-forget notify: schedules the send but does not
+    wait on it, so the caller (disable path) is never blocked by it."""
+    if _ws_loop is not None:
+        asyncio.run_coroutine_threadsafe(_send_to_sender(data), _ws_loop)
+
+
+def _sender_ready():
+    """True only if a sender is currently connected AND that connection has
+    already sent its own explicit remote_control state (see
+    _sender_synchronized)."""
+    with _rc_lock:
+        return sender_ws is not None and _sender_synchronized
+
+
+def _set_rc_state(enabled, mark_synchronized=None):
     """Set remote control state and handle cleanup.
 
     Disabling snapshots and clears `_rc_active_identities` while holding
@@ -185,10 +224,17 @@ def _set_rc_state(enabled):
     in-progress when OFF happens either completes (and is included in this
     snapshot) or is rejected outright by the enabled-check; it can never be
     recorded after this snapshot was taken.
+
+    `mark_synchronized`, when not None, updates `_sender_synchronized` in the
+    same critical section: only the sender's own reported state message
+    (sender_handler) may pass this, establishing readiness for that
+    connection atomically with the state it reports.
     """
-    global remote_control_enabled
+    global remote_control_enabled, _sender_synchronized
     release_snapshot = None
     with _rc_lock:
+        if mark_synchronized is not None:
+            _sender_synchronized = mark_synchronized
         remote_control_enabled = enabled
         if not enabled:
             release_snapshot = set(_rc_active_identities)
@@ -207,9 +253,12 @@ def _rc_inject_event(event):
     """Atomically check RC-enabled, inject via input_injector, and update
     tracked identities under `_rc_lock`. Tracking uses the exact identity
     (VK int / mouse button name) returned by replay_event, never the
-    display `key` string, and only for successful injection."""
+    display `key` string, and only for successful injection. Gating also
+    requires `_sender_synchronized`, so a stale `remote_control_enabled`
+    left over from before this connection can never by itself allow
+    injection before the sender's own state message arrives."""
     with _rc_lock:
-        if not remote_control_enabled:
+        if not remote_control_enabled or not _sender_synchronized:
             return
         try:
             identity = input_injector.replay_event(event)
@@ -223,6 +272,15 @@ def _rc_inject_event(event):
             _rc_active_identities.add(identity)
         elif etype == "key_up":
             _rc_active_identities.discard(identity)
+
+
+class ApiError(Exception):
+    """API-layer error carrying an explicit HTTP status, so handlers can
+    reject a request without pretending success (`{ok: false}` + 200)."""
+
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
 
 
 def _api_get_config(handler, body):
@@ -316,13 +374,24 @@ def _api_post_refresh(handler, body):
 def _api_post_remote_control(handler, body):
     data = json.loads(body)
     enabled = bool(data.get("enabled", False))
-    _set_rc_state(enabled)
-    if _ws_loop:
-        asyncio.run_coroutine_threadsafe(
-            _send_to_sender({"type": "remote_control", "enabled": enabled}),
-            _ws_loop,
+
+    if not enabled:
+        # Safety-first: disable local injection immediately regardless of
+        # sender presence, then best-effort (non-blocking) notify it.
+        _set_rc_state(False)
+        _notify_sender_async({"type": "remote_control", "enabled": False})
+        return {"ok": True, "enabled": False}
+
+    if not _sender_ready():
+        raise ApiError(
+            "Remote Control requires a connected, synchronized sender", status=409,
         )
-    return {"ok": True, "enabled": enabled}
+    if not _send_command_to_sender({"type": "remote_control", "enabled": True}):
+        raise ApiError("Failed to notify sender", status=502)
+
+    # Do not enable locally yet: the sender must report back its own
+    # engaged state (handled in sender_handler) before injection may start.
+    return {"ok": True, "enabled": True}
 
 
 def _api_post_mode_switch(handler, body):
@@ -411,6 +480,8 @@ class OverlayHandler(BaseHTTPRequestHandler):
             return False
         try:
             self._json_response(handler(self, body))
+        except ApiError as e:
+            self._json_response({"error": str(e)}, e.status)
         except Exception as e:
             logger.debug("API %s failed", path, exc_info=True)
             self._json_response({"error": str(e)}, 400)
@@ -563,8 +634,13 @@ async def browser_handler(ws):
 
 
 async def sender_handler(ws):
-    global sender_ws
-    sender_ws = ws
+    global sender_ws, _sender_synchronized
+    # A newly accepted connection starts unsynchronized: fail-closed even if
+    # remote_control_enabled happens to still be True from before (see
+    # _rc_inject_event / _sender_ready).
+    with _rc_lock:
+        sender_ws = ws
+        _sender_synchronized = False
     print(f"[Sender] Connected from {ws.remote_address}")
     try:
         async for msg in ws:
@@ -573,9 +649,12 @@ async def sender_handler(ws):
             except (json.JSONDecodeError, ValueError):
                 continue
 
-            # Handle remote_control toggle from sender
+            # Handle remote_control toggle from sender: this is the only
+            # message that may establish synchronized/ready state for this
+            # connection, and it sets receiver RC state to exactly what the
+            # sender reports (an explicit false keeps injection off).
             if event.get("type") == "remote_control":
-                _set_rc_state(event.get("enabled", False))
+                _set_rc_state(event.get("enabled", False), mark_synchronized=True)
                 continue
 
             # Broadcast to browsers (existing behavior)
@@ -585,11 +664,12 @@ async def sender_handler(ws):
             # tracked-state update happen atomically inside _rc_inject_event)
             _rc_inject_event(event)
     finally:
-        if sender_ws is ws:
-            sender_ws = None
-        # If remote control was active, disable it
         with _rc_lock:
+            if sender_ws is ws:
+                sender_ws = None
+            _sender_synchronized = False
             was_active = remote_control_enabled
+        # If remote control was active, disable it
         if was_active:
             _set_rc_state(False)
         print("[Sender] Disconnected")
