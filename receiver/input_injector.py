@@ -107,7 +107,9 @@ _MOUSE_BUTTONS = {
 
 
 def _send_input(inp):
-    user32.SendInput(1, byref(inp), sizeof(INPUT))
+    """Send one INPUT struct via SendInput. Returns True iff the OS reports
+    the event as successfully inserted into the input stream."""
+    return user32.SendInput(1, byref(inp), sizeof(INPUT)) == 1
 
 
 # Extended keys that require KEYEVENTF_EXTENDEDKEY flag
@@ -144,7 +146,7 @@ def inject_key(vk, key_up=False):
     inp.union.ki.wVk = vk
     inp.union.ki.wScan = scan
     inp.union.ki.dwFlags = flags
-    _send_input(inp)
+    return _send_input(inp)
 
 
 def inject_mouse_move(dx, dy):
@@ -175,17 +177,25 @@ def inject_mouse_scroll(dx, dy):
 def inject_mouse_button(button, is_down):
     info = _MOUSE_BUTTONS.get(button)
     if not info:
-        return
+        return False
     down_flag, up_flag, mouse_data = info
     inp = INPUT()
     inp.type = INPUT_MOUSE
     inp.union.mi.dwFlags = down_flag if is_down else up_flag
     inp.union.mi.mouseData = mouse_data
-    _send_input(inp)
+    return _send_input(inp)
 
 
 def replay_event(event):
-    """Parse an input event dict and inject it as OS input."""
+    """Parse an input event dict and inject it as OS input.
+
+    Returns a tagged identity for a successfully-injected, holdable input:
+    ("vk", <int vk>) for a keyboard key, ("mouse", <name>) for a mouse
+    button. Returns None for mouse move/scroll (never held state), a failed
+    or unsupported injection, or any other non-injectable event type. The
+    caller uses this identity (not the display `key` string) to track and
+    later release exactly what was injected.
+    """
     etype = event.get("type")
     key = event.get("key", "")
 
@@ -194,42 +204,38 @@ def replay_event(event):
         dy = event.get("dy", 0)
         if dx or dy:
             inject_mouse_move(dx, dy)
-        return
+        return None
 
     if etype == "mouse_scroll":
         inject_mouse_scroll(event.get("dx", 0), event.get("dy", 0))
-        return
+        return None
 
     if etype in ("key_down", "key_up"):
         is_down = etype == "key_down"
         # Mouse button
         if key.startswith("mouse_"):
-            inject_mouse_button(key, is_down)
-            return
+            if inject_mouse_button(key, is_down):
+                return ("mouse", key)
+            return None
         # Keyboard: prefer sender's VK code (actual physical key),
         # fall back to name map for keys without VK
         vk = event.get("vk")
         if vk is None:
             vk = _KEY_TO_VK.get(key)
-        if vk is not None:
-            inject_key(vk, key_up=not is_down)
-        return
+        if vk is not None and inject_key(vk, key_up=not is_down):
+            return ("vk", vk)
+        return None
 
     # axis_update, mode_switch, remote_control, etc. -> skip
+    return None
 
 
-def release_all(pressed_keys):
-    """Release all currently pressed keys to prevent stuck keys."""
-    for key in list(pressed_keys):
-        if key.startswith("mouse_"):
-            inject_mouse_button(key, is_down=False)
-        else:
-            vk = _KEY_TO_VK.get(key)
-            if vk is None and key.startswith("vk_"):
-                try:
-                    vk = int(key[3:])
-                except ValueError:
-                    pass
-            if vk is not None:
-                inject_key(vk, key_up=True)
-    pressed_keys.clear()
+def release_identities(identities):
+    """Release exactly the given tracked identities (as returned by
+    replay_event), by their exact VK / mouse button name. Never reconstructs
+    a VK from a display name."""
+    for kind, value in identities:
+        if kind == "vk":
+            inject_key(value, key_up=True)
+        elif kind == "mouse":
+            inject_mouse_button(value, is_down=False)

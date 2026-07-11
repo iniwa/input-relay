@@ -20,21 +20,6 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ### 1. Remote Control の安全性
 
-- [ ] **【高】押下中入力を実 VK 単位かつ原子的に追跡して stuck key を防ぐ**
-  - 現状: `receiver/input_server.py:42,175-187,547-556` は表示用の
-    `key` 文字列だけを set に保存し、状態判定・注入・追跡・OFF 時の解放を
-    同じロックで直列化していない。注入はイベントの実 VK を使う一方
-    (`receiver/input_injector.py:203-215`)、一括解放は名前表から VK を再構成する
-    (`receiver/input_injector.py:67,221-235`)。右 Shift/Ctrl/Alt の VK
-    `161/163/165` は左側 `160/162/164` として解放され、Win キー VK `91/92`
-    は解放対象が 0 件になる。OFF と進行中の key-down が競合すると、解放後に
-    down/add が走ってキーが残る経路もある。
-  - 対応案: 注入成功時の keyboard VK / mouse button を実入力単位で保持し、
-    state 判定から追跡更新までを同じ同期境界で処理する。disable はロック内で
-    snapshot+clear、ロック外で正確な release を行い、左右同時押しと OFF 競合の
-    unittest を追加する。
-  - 制約: イベント JSON、通常の注入順、切断時 auto-disable、入力経路の低遅延を維持。
-
 - [ ] **【高】Remote Control の接続遷移を fail-closed にする**
   - 現状: sender 不在でも `POST /api/remote-control` は先に ON にして成功を返す
     (`receiver/input_server.py:166-172,278-287`)。後から接続した sender は自身が
@@ -218,6 +203,47 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: 押下中入力を実 VK 単位かつ原子的に追跡して stuck key を防ぐ
+検証: `python -m py_compile receiver\input_server.py receiver\input_injector.py` OK、
+`python -m unittest discover -s tests` OK（31件）、`python -m ruff check .` OK、
+`git diff --check` OK。Live 確認（実機での Remote Control 実注入）は未実施
+（Main PC sender / Sub PC receiver が必要なため）。実 `config/*.json` の読み書きなし。
+
+`receiver/input_injector.py`: `_send_input` が `SendInput` の戻り値（挿入成功
+件数）を見て bool を返すようにし、`inject_key` / `inject_mouse_button` もその
+成否を返す。`replay_event` は成功した注入についてのみ、キーボードは
+`("vk", <int>)`、マウスボタンは `("mouse", "<mouse_*>")` というタグ付き
+tuple の識別子を返すよう変更（mouse_move/scroll・失敗・未対応イベントは
+`None`）。名前表からの VK 再構成に依存していた `release_all` は削除し、
+代わりに識別子をそのまま解放する `release_identities` を追加（右 Shift/Ctrl/Alt
+の VK `161/163/165` や Win キー `91/92` も表示名を経由せず正確な VK で解放）。
+
+`receiver/input_server.py`: `_rc_pressed_keys`（表示名 set）を
+`_rc_active_identities`（識別子 set）に置き換え。新設の `_rc_inject_event`
+が「有効状態チェック → 注入 → 追跡更新」を単一の `_rc_lock` 臨界区間内で
+アトミックに行うようにし、`sender_handler` はこれを呼ぶだけに簡素化。
+`_set_rc_state` は無効化時、`_rc_lock` 内で追跡集合を snapshot して clear し、
+ロック外でその snapshot だけを `release_identities` で解放する。これにより
+OFF と競合する進行中の key-down は「_rc_inject_event 全体が disable の
+snapshot より前に完了して解放対象に含まれる」か「有効チェックの時点で
+即座に拒否される」のいずれかにしかならず、解放後に注入・追跡が残る経路が
+なくなる。
+
+`tests/test_remote_control.py` を新規追加（17件）。`input_injector` 単体は
+実モジュールを import し `_send_input` のみ fake に差し替えてテスト
+（右 Shift/Ctrl/Alt・Win キーの正確な VK 解放、左右同時押しの独立性、
+マウスボタンの正確な解放経路、注入失敗時・未対応ボタン時に識別子を
+追跡しないこと）。`input_server` 側は fake injector で `_rc_inject_event` /
+`_set_rc_state` のロック・ライフサイクルを検証（有効時のみ注入、繰り返し
+up/down の無害性、disable 時の正確な snapshot 解放、そして key-down と
+disable の競合を `_rc_lock.locked()` を使った同期フックで決定的に再現し
+リーク・OFF 後注入が起きないことを確認）。sleep をアサーションには使用せず。
+
+イベント JSON・API ルート・注入順序（成功時のみ追跡更新）・切断時
+auto-disable・browser への状態ブロードキャストは変更なし。`docs/api.md` の
+「OFF 時の解放」記述を `release_all` から `release_identities` ベースの
+説明に更新。
 
 ### 2026-07-09: lint とテストの最低限を整備する
 検証: `python -m unittest discover -s tests` OK（18件）、`python -m ruff check .` OK

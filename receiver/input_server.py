@@ -39,7 +39,10 @@ _standalone_queue = None  # asyncio.Queue, set in main() when standalone
 # Remote control state
 remote_control_enabled = False
 _rc_lock = threading.Lock()
-_rc_pressed_keys = set()  # track pressed keys for stuck-key prevention
+# Exact tracked identities of currently-injected input, as returned by
+# input_injector.replay_event(): ("vk", <int>) or ("mouse", <name>).
+# Never derived from the display `key` string (see _rc_inject_event).
+_rc_active_identities = set()
 
 OVERLAY_DIR = Path(__file__).parent
 CONFIG_DIR = OVERLAY_DIR.parent / "config"
@@ -173,18 +176,53 @@ async def _send_to_sender(data):
 
 
 def _set_rc_state(enabled):
-    """Set remote control state and handle cleanup."""
+    """Set remote control state and handle cleanup.
+
+    Disabling snapshots and clears `_rc_active_identities` while holding
+    `_rc_lock`, then releases that exact snapshot outside the lock. Because
+    `_rc_inject_event` below performs its enabled-check, injection, and
+    tracked-state update inside the same lock, a key-down that is
+    in-progress when OFF happens either completes (and is included in this
+    snapshot) or is rejected outright by the enabled-check; it can never be
+    recorded after this snapshot was taken.
+    """
     global remote_control_enabled
+    release_snapshot = None
     with _rc_lock:
         remote_control_enabled = enabled
+        if not enabled:
+            release_snapshot = set(_rc_active_identities)
+            _rc_active_identities.clear()
     state = "ENABLED" if enabled else "DISABLED"
     print(f"[RemoteControl] {state}")
-    if not enabled:
-        input_injector.release_all(_rc_pressed_keys)
+    if release_snapshot:
+        input_injector.release_identities(release_snapshot)
     # Broadcast to browsers
     msg = json.dumps({"type": "remote_control_state", "enabled": enabled})
     if _ws_loop:
         asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+
+
+def _rc_inject_event(event):
+    """Atomically check RC-enabled, inject via input_injector, and update
+    tracked identities under `_rc_lock`. Tracking uses the exact identity
+    (VK int / mouse button name) returned by replay_event, never the
+    display `key` string, and only for successful injection."""
+    with _rc_lock:
+        if not remote_control_enabled:
+            return
+        try:
+            identity = input_injector.replay_event(event)
+        except Exception as e:
+            print(f"[RemoteControl] Inject error: {e}")
+            return
+        if identity is None:
+            return
+        etype = event.get("type")
+        if etype == "key_down":
+            _rc_active_identities.add(identity)
+        elif etype == "key_up":
+            _rc_active_identities.discard(identity)
 
 
 def _api_get_config(handler, body):
@@ -543,19 +581,9 @@ async def sender_handler(ws):
             # Broadcast to browsers (existing behavior)
             await broadcast_to_browsers(msg)
 
-            # Remote control: inject as OS input
-            with _rc_lock:
-                rc_active = remote_control_enabled
-            if rc_active:
-                try:
-                    input_injector.replay_event(event)
-                    # Track pressed keys for stuck-key prevention
-                    if event.get("type") == "key_down":
-                        _rc_pressed_keys.add(event.get("key", ""))
-                    elif event.get("type") == "key_up":
-                        _rc_pressed_keys.discard(event.get("key", ""))
-                except Exception as e:
-                    print(f"[RemoteControl] Inject error: {e}")
+            # Remote control: inject as OS input (state check + inject +
+            # tracked-state update happen atomically inside _rc_inject_event)
+            _rc_inject_event(event)
     finally:
         if sender_ws is ws:
             sender_ws = None
