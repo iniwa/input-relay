@@ -649,6 +649,14 @@ async def sender_handler(ws):
             except (json.JSONDecodeError, ValueError):
                 continue
 
+            # A replacement sender may already have connected while this
+            # older handler was unwinding.  Its late messages must not change
+            # the current connection's synchronization/RC state.
+            with _rc_lock:
+                is_current_sender = sender_ws is ws
+            if not is_current_sender:
+                continue
+
             # Handle remote_control toggle from sender: this is the only
             # message that may establish synchronized/ready state for this
             # connection, and it sets receiver RC state to exactly what the
@@ -667,8 +675,10 @@ async def sender_handler(ws):
         with _rc_lock:
             if sender_ws is ws:
                 sender_ws = None
-            _sender_synchronized = False
-            was_active = remote_control_enabled
+                _sender_synchronized = False
+                was_active = remote_control_enabled
+            else:
+                was_active = False
         # If remote control was active, disable it
         if was_active:
             _set_rc_state(False)

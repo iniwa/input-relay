@@ -936,9 +936,9 @@ async function toggleRemoteControl() {
       showStatus(data.error || 'Remote Control 切替失敗', false);
       return;
     }
-    // ON への切替は sender の応答 (remote_control_state ブロードキャスト) で
-    // 確定するまで実際には有効化されない。ボタンは要求値を暫定表示する。
-    updateRcButton(data.enabled);
+    // ON は sender の応答 (remote_control_state ブロードキャスト) で確定する
+    // まで表示も切り替えない。OFF は receiver 側で即時に安全側へ倒れる。
+    if (!newState) updateRcButton(false);
   } catch (e) {
     showStatus('Remote Control 切替失敗', false);
   }
