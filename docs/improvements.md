@@ -20,17 +20,6 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 
 ### 1. Remote Control の安全性
 
-- [ ] **【高】Remote Control 有効化時に入力抑止を表示待ちより先に確立する**
-  - 現状: `sender/input_sender.py:147-166` は `remote.mode=True` の後、overlay の
-    `show()` を低レベル mouse blocker と suppress listener より先に呼ぶ。初回
-    `show()` は Tk thread の ready を最大 3.0 秒同期待ちする
-    (`sender/overlay_window.py:69,97-105`) ため、その間 Main PC への入力抑止が
-    未確立で、async receiver handler からの切替では event loop も止まる。
-  - 対応案: low-level blocker と suppress listener を先に有効化し、overlay thread は
-    起動時 prewarm または non-blocking command 化する。初回 enable の順序を fake
-    manager/listener で検証する。
-  - 制約: overlay 表示、Pause による一時非表示、cursor freeze、二重防護を維持。
-
 - [ ] **【高】sender 切断時に browser の押下・軸状態を明示的にリセットする**
   - 現状: sender cleanup (`receiver/input_server.py:559-567`) は RC 状態だけを解除し、
     browser へ入力 reset を送らない。browser WebSocket は接続したままなので、切断時に
@@ -194,6 +183,36 @@ Claude Code（`claude -p --model sonnet --permission-mode auto` / Sonnet 5）が
 ---
 
 ## 完了アーカイブ
+
+### 2026-07-11: Remote Control 有効化時に入力抑止を表示待ちより先に確立する
+検証: `python -m py_compile sender\input_sender.py` OK、
+`python -m unittest discover -s tests` OK（46件）、`python -m ruff check .` OK、
+`git diff --check` OK。Live 確認（実機での Remote Control 有効化・オーバーレイ表示）
+は未実施（Main PC sender が必要なため）。実 `config/*.json` の読み書きなし。
+
+`sender/input_sender.py`: `_set_remote_mode` の enable 分岐を並べ替え、
+`_overlay_manager.show()`（初回 Tk thread ready を最大 3.0 秒同期待ちし得る
+`sender/overlay_window.py:69,97-105`）より前に `_ll_mouse_blocker.set_suppress(True)`
+と `_restart_listeners(suppress=True)` を完了させるようにした。新しい enable 順序は
+`set_user_hidden(False)` → `_freeze_cursor()` → `_ll_mouse_blocker.set_suppress(True)`
+→ `_restart_listeners(suppress=True)` → `_overlay_manager.show()`。disable 分岐は
+既存の意図（低レベル抑止解除 → overlay 非表示 → cursor unfreeze → listener を
+suppress なしへ復帰）をそのまま維持しつつ、`_restart_listeners` 呼び出しを
+分岐内の末尾へ移し順序を明示化した（if/else 後の共通呼び出しを廃止）。
+cursor freeze・Pause による一時非表示・user-hidden 状態・二重防護設計
+（`_ll_mouse_blocker` + pynput suppress listener）は変更なし。overlay thread の
+prewarm は導入せず（handoff の "Prefer ordering only" 方針どおり、順序変更のみで
+表示待ち中の入力抑止という目的を満たすため）。
+
+`tests/test_remote_control.py` に `RemoteModeSuppressionOrderingTests` を追加
+（既存 42 件 + 新規 4 件 = 46 件）。`FakeOverlayManager` / `FakeLLMouseBlocker` と
+`_restart_listeners`/`_freeze_cursor`/`_unfreeze_cursor` の関数差し替えで
+`_set_remote_mode` の呼び出し順序だけを記録し、enable 時に
+`ll_suppress(True)` と `restart_listeners(True)` が `overlay.show()` より前に
+完了すること、disable 時が `ll_suppress(False)` → `overlay.hide()` →
+`unfreeze_cursor()` → `restart_listeners(False)` の順であること、同一モードへの
+repeat 呼び出しが完全な no-op（呼び出し 0 件）であることを検証。実フック・Tk・
+ソケット・OS 入力は一切使用しない。
 
 ### 2026-07-11: Remote Control の接続遷移を fail-closed にする
 検証: `python -m py_compile sender\input_sender.py receiver\input_server.py` OK、

@@ -151,19 +151,24 @@ def _set_remote_mode(enabled):
     if was == enabled:
         return
     print(f"[Remote] {'ENABLED' if enabled else 'DISABLED'}")
+    # 新 listener を先に立ち上げてから旧 listener を stop する（ラグ窓を消す）。
+    # この関数は pynput の on_press 内から呼ばれ得るが、stop() はフラグを立てる
+    # だけなので自スレッドから呼んでもデッドロックしない。
     if enabled:
+        # 低レベルフックと listener の suppress 再起動を、overlay.show() より
+        # 先に完了させる。overlay.show() は初回 Tk thread ready 待ちで最大 3.0 秒
+        # 同期的にブロックし得る (overlay_window.py) ため、先に入力抑止（二重防護）
+        # を確立してから表示待ちに入ることで、待機中も Main PC への入力が漏れない。
         _overlay_manager.set_user_hidden(False)
         _freeze_cursor()
-        _overlay_manager.show()
         _ll_mouse_blocker.set_suppress(True)
+        _restart_listeners(suppress=True)
+        _overlay_manager.show()
     else:
         _ll_mouse_blocker.set_suppress(False)
         _overlay_manager.hide()
         _unfreeze_cursor()
-    # 新 listener を先に立ち上げてから旧 listener を stop する（ラグ窓を消す）。
-    # この関数は pynput の on_press 内から呼ばれ得るが、stop() はフラグを立てる
-    # だけなので自スレッドから呼んでもデッドロックしない。
-    _restart_listeners(suppress=enabled)
+        _restart_listeners(suppress=False)
     # receiver / monitor への通知のみ非同期で
     if _loop is not None and remote.toggle_event is not None:
         _loop.call_soon_threadsafe(remote.toggle_event.set)

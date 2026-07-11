@@ -557,5 +557,119 @@ class SenderAnnouncesExplicitStateOnConnectTests(unittest.IsolatedAsyncioTestCas
         self.assertEqual(sent, [json.dumps({"type": "remote_control", "enabled": True})])
 
 
+class FakeOverlayManager:
+    """Stand-in for sender's OverlayManager: no Tk thread, no queue -- just
+    records calls (and their order) into a shared list."""
+
+    def __init__(self, order):
+        self._order = order
+
+    def set_user_hidden(self, hidden):
+        self._order.append(("overlay.set_user_hidden", hidden))
+
+    def show(self):
+        self._order.append(("overlay.show",))
+
+    def hide(self):
+        self._order.append(("overlay.hide",))
+
+
+class FakeLLMouseBlocker:
+    """Stand-in for ll_mouse_hook.LowLevelMouseBlocker: just records the
+    suppress flag transitions, no real WH_MOUSE_LL hook."""
+
+    def __init__(self, order):
+        self._order = order
+
+    def set_suppress(self, enabled):
+        self._order.append(("ll_suppress", enabled))
+
+
+class RemoteModeSuppressionOrderingTests(unittest.TestCase):
+    """input_sender._set_remote_mode must establish low-level mouse
+    suppression and restart the (suppress) keyboard/mouse listeners before
+    ever calling overlay.show() -- show() can block up to 3.0s on first-run
+    Tk-thread readiness (overlay_window.py), and Main PC input must already
+    be suppressed during that wait. Uses fakes only: no real hook, Tk,
+    socket, or OS input."""
+
+    def setUp(self):
+        self.order = []
+        self._orig_overlay = input_sender._overlay_manager
+        self._orig_blocker = input_sender._ll_mouse_blocker
+        self._orig_restart = input_sender._restart_listeners
+        self._orig_freeze = input_sender._freeze_cursor
+        self._orig_unfreeze = input_sender._unfreeze_cursor
+
+        input_sender._overlay_manager = FakeOverlayManager(self.order)
+        input_sender._ll_mouse_blocker = FakeLLMouseBlocker(self.order)
+        input_sender._restart_listeners = (
+            lambda suppress=False: self.order.append(("restart_listeners", suppress))
+        )
+        input_sender._freeze_cursor = lambda: self.order.append(("freeze_cursor",))
+        input_sender._unfreeze_cursor = lambda: self.order.append(("unfreeze_cursor",))
+
+        input_sender.remote.mode = False
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        input_sender._overlay_manager = self._orig_overlay
+        input_sender._ll_mouse_blocker = self._orig_blocker
+        input_sender._restart_listeners = self._orig_restart
+        input_sender._freeze_cursor = self._orig_freeze
+        input_sender._unfreeze_cursor = self._orig_unfreeze
+        input_sender.remote.mode = False
+
+    def test_enable_establishes_suppression_and_listener_restart_before_show(self):
+        input_sender._set_remote_mode(True)
+
+        self.assertEqual(
+            self.order,
+            [
+                ("overlay.set_user_hidden", False),
+                ("freeze_cursor",),
+                ("ll_suppress", True),
+                ("restart_listeners", True),
+                ("overlay.show",),
+            ],
+        )
+        self.assertTrue(input_sender.remote.mode)
+
+    def test_disable_removes_suppression_hides_overlay_then_restores_listeners(self):
+        input_sender.remote.mode = True
+        self.order.clear()
+
+        input_sender._set_remote_mode(False)
+
+        self.assertEqual(
+            self.order,
+            [
+                ("ll_suppress", False),
+                ("overlay.hide",),
+                ("unfreeze_cursor",),
+                ("restart_listeners", False),
+            ],
+        )
+        self.assertFalse(input_sender.remote.mode)
+
+    def test_repeat_enable_is_a_noop(self):
+        input_sender._set_remote_mode(True)
+        self.order.clear()
+
+        input_sender._set_remote_mode(True)
+
+        self.assertEqual(self.order, [])
+        self.assertTrue(input_sender.remote.mode)
+
+    def test_repeat_disable_is_a_noop(self):
+        input_sender.remote.mode = False
+        self.order.clear()
+
+        input_sender._set_remote_mode(False)
+
+        self.assertEqual(self.order, [])
+        self.assertFalse(input_sender.remote.mode)
+
+
 if __name__ == "__main__":
     unittest.main()
