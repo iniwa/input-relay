@@ -9,32 +9,14 @@ review criteria — read it before non-trivial work.
 - Keep reports concise and factual.
 
 ## Codex / Claude Code Workflow
-- Codex normally delegates implementation by running this command from
-  `D:/Git/input-relay`:
-
-  ```powershell
-  claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"
-  ```
-
-- Codex handoffs live under `docs/handoffs/`; when a handoff path is
-  provided, read it before editing and follow it first, then this file,
-  then surrounding project patterns.
-- Active handoffs are stored at the `docs/handoffs/` root. After Codex review,
-  completed handoffs move to `docs/handoffs/archive/`.
-- If the task is ambiguous, requires changing documented design intent, or
-  needs files outside the handoff, stop and report before editing.
-- Small, clearly-scoped fixes may be requested directly without a handoff.
-
-## Model / Subagent Policy
-- Standard execution is Sonnet 5 via `--model sonnet` with
-  `--permission-mode auto`; treat `sonnet` as the current Sonnet alias.
-- Codex handoffs are written for Sonnet-level execution: goal, file scope,
-  constraints, non-goals, and verification are explicit enough that
-  implementation requires no design judgment.
-- If a handoff still requires a design decision, has an ambiguous scope, or
-  conflicts with this file, stop and return the question to Codex.
-- Subagents are optional, not the default; they inherit all handoff
-  constraints.
+- Treat `AGENTS.md` as the Codex-side source of design intent and this file as Claude Code execution rules. Follow a supplied handoff first, then this file, then local conventions.
+- Terra/Sol owns requirements and design. After design is fixed, Luna Max coordinates small sequential handoffs; Claude Code Sonnet 5 performs delegated edits and verification.
+- Standard delegated execution from the repository root is `claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"`. On Windows, keep the command line ASCII-only and read non-ASCII instructions from a UTF-8 handoff file.
+- Implement and report only the current independently verifiable slice. Wait for Luna Max review before a later slice.
+- If the handoff is ambiguous, conflicts with documented design, or requires files outside its scope, stop and return the question to Codex. Small, clearly scoped fixes may be requested directly.
+- Subagents are optional and limited to clearly parallel mechanical work within the same constraints. If an intended model is unavailable, continue only when safe and report the limitation.
+- Do not commit unless explicitly requested. Report changed files, summary, verification results, blocked checks, subagent usage, and design questions.
+- Active handoffs live at `docs/handoffs/`; after Codex review, move completed handoffs to `docs/handoffs/archive/`.
 
 ## Architecture (keep in mind when editing)
 - Two **resident** Windows processes, auto-started at login:
@@ -85,8 +67,7 @@ Do not edit or delete unless explicitly requested:
 - Workspace: `D:/Git/input-relay`. The only push remote is
   `origin = gitea:iniwa/input-relay`. Do not push to the GitHub mirror
   unless explicitly requested.
-- After completed work, commit and push proactively (no need to wait for
-  an instruction).
+- Do not commit or push unless explicitly requested.
 - Deployment to the Sub PC agent goes through secretary-bot: after pushing
   here, bump the `windows-agent/tools/input-relay` submodule pointer in
   `D:/Git/secretary-bot`, push, then `POST /api/update-code` on the Pi.

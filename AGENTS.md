@@ -31,77 +31,16 @@ AGENTS.md / CLAUDE.md / README.md refresh), follow
 - sender runs on Main PC, receiver runs on Sub PC. Runtime checks that need
   a live process must name which PC they run on.
 
-## Role Split
-Codex is responsible for:
-- clarifying requirements and success criteria
-- preserving design intent and responsibility boundaries
-- preparing concrete Claude Code handoffs (`docs/handoffs/`)
-- reviewing Claude Code output against this file and the handoff
-- recording durable decisions in this file or `docs/*.md`
-
-Claude Code is responsible for:
-- executing clear, scoped handoffs
-- following the project `CLAUDE.md`
-- running via `claude -p --model sonnet --permission-mode auto` from the repo
-  root (Sonnet 5 / current Sonnet alias, non-interactive print mode)
-- returning design questions to Codex instead of deciding locally
-- running requested verification where possible and reporting results
-
-Codex may implement small or design-sensitive changes directly.
-
-## Claude Code Invocation / Model Policy
-### Common Model Policy (2026-07-10)
-
-This common policy overrides any earlier generic statement in this section
-about coordinator-model selection or model roles.
-
-- Handoff design and post-implementation review use Codex GPT-5.6 Sol with
-  reasoning medium. Everyday light Codex work may use the GPT-5.6 Terra
-  default; do not use Terra for handoff design.
-- Claude Code Sonnet 5 (`--model sonnet`) is the implementation executor at
-  effort medium. Handoffs must leave no design judgment to the executor.
-- Fable 5 is not part of the normal flow. Use it only as a medium-effort
-  second opinion for difficult design decisions. GPT-5.6 Luna is not used in
-  this workflow.
-- Subagents are optional only for clearly parallel mechanical work. They must
-  inherit the handoff constraints and must not change design intent, expand
-  scope, add dependencies, alter build/deploy/external exposure, or touch
-  secrets.
-- On Windows, put Japanese or other non-ASCII handoff bodies in a UTF-8
-  handoff file. Keep the delegated command line ASCII-only (handoff path plus
-  a short English instruction); do not pipe the prompt body through Windows
-  PowerShell 5.1. When running `codex exec` in the background, close stdin
-  with `$null |` to prevent an EOF wait.
-
-Detailed verification rationale is recorded in
-`D:/Git/CLAUDEmdStrage/docs/decisions/2026-07-10-model-selection-gpt56-fable5.md`.
-Claude Code is delegated by Codex with this standard command shape from
-`D:/Git/input-relay`:
-
-```powershell
-claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"
-```
-
-`--model sonnet` is the Sonnet 5 / current Sonnet alias for implementation
-work. `--permission-mode auto` is the normal execution mode. Codex owns
-design; Sonnet owns implementation.
-
-Consequences for Codex when writing handoffs:
-- Write each handoff so a Sonnet implementer can complete it without design
-  judgment: explicit goal, file scope, constraints, non-goals, verification,
-  and concrete data sources.
-- Resolve ambiguity in the handoff itself; do not rely on Claude Code
-  escalating to a larger model or interpreting intent.
-- Expect design-sensitive questions to come back as report items rather than
-  local decisions.
-
-Rules for Claude Code execution:
-- Follow the handoff and `CLAUDE.md`; return design questions to Codex
-  instead of deciding locally.
-- Subagents are optional, used only for clearly parallelizable mechanical
-  work, and inherit all handoff constraints.
-- For very small edits, direct implementation without extra orchestration is
-  preferred.
+## Role Split / Model Policy
+- GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and design. Prefer Sol for substantial ambiguity, risk, or cross-boundary reasoning.
+- After design is fixed, GPT-5.6 Luna Max (`gpt-5.6-luna-max`) coordinates implementation through small, sequential handoffs: one independently verifiable route, subsystem boundary, or lifecycle path plus its direct regression tests.
+- Claude Code Sonnet 5 performs delegated edits and verification at effort medium from the repository root: `claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"`.
+- Handoffs state the goal, files, constraints, non-goals, verification, and concrete data sources so Sonnet needs no design judgment. Claude Code implements only the current slice and returns design questions to Codex.
+- Luna Max reviews each result before preparing the next slice. Material design questions return to Terra/Sol instead of changing the approved design.
+- Codex may keep small or design-sensitive changes in one context. Fable 5 is only a medium-effort second opinion for difficult design decisions.
+- Claude Code subagents are optional and limited to clearly parallel mechanical work; they inherit the handoff and may not expand scope, change design, add dependencies, alter deployment or external exposure, or touch secrets.
+- When GPT-5.6 Sol Ultra (`gpt-5.6-sol-ultra`) delegates work to a subagent, use GPT-5.6 Luna Max (`gpt-5.6-luna-max`) or GPT-5.6 Terra (`gpt-5.6-terra`). When using Terra, set its reasoning level from low through high; do not use a level outside that range.
+- On Windows, keep delegated command lines ASCII-only, put non-ASCII instructions in a UTF-8 handoff file, and close background `codex exec` stdin with `$null |`. If an intended model is unavailable, use an available model only when the work remains safe and report the limitation.
 
 ## Project-Specific Design Principles
 - Both processes are **resident** (auto-started at login). Stability over
