@@ -1,85 +1,78 @@
 # CLAUDE.md
 
-Execution rules for Claude Code working on `input-relay`.
-`AGENTS.md` is the Codex-side source of design intent, handoff rules, and
-review criteria — read it before non-trivial work.
+## Purpose
 
-## Communication
-- The user writes in Japanese; respond in Japanese.
-- Keep reports concise and factual.
+This file contains Claude Code execution rules for `input-relay`. `AGENTS.md` owns design intent, delegation policy, and Codex review.
 
-## Codex / Claude Code Workflow
-- Treat `AGENTS.md` as the Codex-side source of design intent and this file as Claude Code execution rules. Follow a supplied handoff first, then this file, then local conventions.
-- Terra/Sol owns requirements and design. After design is fixed, Luna Max coordinates small sequential handoffs; Claude Code Sonnet 5 performs delegated edits and verification.
-- Standard delegated execution from the repository root is `claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"`. On Windows, keep the command line ASCII-only and read non-ASCII instructions from a UTF-8 handoff file.
-- Implement and report only the current independently verifiable slice. Wait for Luna Max review before a later slice.
-- If the handoff is ambiguous, conflicts with documented design, or requires files outside its scope, stop and return the question to Codex. Small, clearly scoped fixes may be requested directly.
-- Subagents are optional and limited to clearly parallel mechanical work within the same constraints. If an intended model is unavailable, continue only when safe and report the limitation.
-- Do not commit unless explicitly requested. Report changed files, summary, verification results, blocked checks, subagent usage, and design questions.
-- Active handoffs live at `docs/handoffs/`; after Codex review, move completed handoffs to `docs/handoffs/archive/`.
+## Read Before Editing
 
-## Architecture (keep in mind when editing)
-- Two **resident** Windows processes, auto-started at login:
-  - `sender/input_sender.py` on Main PC (192.168.1.210): captures
-    keyboard (pynput) / raw mouse (60Hz flush) / gamepad (pygame 60Hz),
-    sends events to the receiver over WebSocket, serves a config HTTP API
-    (8082) and a monitor WS (8083).
-  - `receiver/input_server.py` on Sub PC (192.168.1.211): WebSocket server
-    (8888) relaying events to OBS browser-source overlays, HTTP server
-    (8081) for overlay pages / config GUI / JSON API, and remote-control
-    input injection (`input_injector.py`).
-- Standalone 1-PC mode: `input_server.py --standalone` with
-  `standalone_capture.py`.
-- In normal 2PC operation the Main and Sub PCs have separate local config
-  files. The live sender reads the Main PC's `sender_config.json`; receiver
-  `/api/sender-config` only reads/writes the receiver PC's local copy.
-- `docs/api.md` is the authoritative API reference; update it when changing
-  routes (dispatch tables in `receiver/input_server.py`, `SenderHTTPHandler` in
-  `sender/http_api.py`, monitor WS in `sender/monitor_ws.py`).
+Read:
 
-## Coding Rules
-- Resident stability first: no unbounded queues/dicts tied to uptime, no
-  per-event blocking work on the capture/relay path, keep 60Hz throttling.
-- Preserve remote-control safety behavior: stuck-key prevention, auto
-  disable on disconnect, mouse suppression (`ll_mouse_hook.py`).
-- Stack stays minimal: stdlib + `websockets` + `pynput` (+ `pygame`).
-  No new dependencies, build tooling, packaging, or CI/CD unless the
-  handoff explicitly allows it.
-- Single-file HTML GUIs are intentional; no frontend build system.
-- Keep `.bat` launchers working when changing dependencies or entry points.
-- Python 3.11-compatible code.
+- `AGENTS.md`.
+- The supplied handoff, when present.
+- `README.md`, `docs/api.md`, and every file listed for inspection.
+- Relevant active records under `docs/`.
 
-## Protected Files
-Do not edit or delete unless explicitly requested:
-- real `config/*.json` (user-local, gitignored; edit `*.example.json`
-  instead when config shape changes)
-- `startup/` registration state on the PCs
+## Project Facts
+
+- Python 3.11 Windows application with resident sender and receiver processes plus a standalone mode.
+- The sender captures keyboard, mouse, and gamepad input. The receiver serves OBS overlays and configuration pages and can inject approved remote-control input.
+- Public route, payload, and default-port contracts are documented in `docs/api.md`.
+- Runtime dependencies are intentionally limited to standard-library modules and the existing `websockets`, `pynput`, and optional `pygame` packages.
+- The HTML interfaces are intentionally build-free single files.
+
+## Execution Rules
+
+- Implement and report only the current independently verifiable slice.
+- A handoff defines task scope but does not override durable constraints in `AGENTS.md`.
+- If the listed files are insufficient to reach the first scoped edit, stop and report the missing discovery or proposed split instead of broadening the task.
+- Return unresolved requirements and design choices to Codex.
+- Stop before adding a dependency or changing protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, or external exposure unless the task explicitly includes it.
+- Subagents are optional and limited to clearly parallel mechanical work within the same files, scope, and constraints.
+- Preserve unrelated user and other-agent changes. Treat unexpected diffs as having unknown authorship and exclude them from the current task.
+- Do not commit, push, or deploy unless explicitly requested.
+
+## Implementation Constraints
+
+- Keep resident queues, buffers, caches, and tasks bounded and clean them up on disconnect or shutdown.
+- Do not add blocking work to input capture, relay, injection, or other per-event paths. Preserve high-frequency throttling.
+- Preserve fail-closed remote-control behavior, exact pressed-input cleanup, disconnect auto-disable, and mouse suppression.
+- Preserve direct-script entry points and keep the `.bat` launchers compatible with dependency or entry-point changes.
+- Do not introduce a frontend build system.
+- Follow existing Python and single-file HTML patterns before adding abstractions.
+- When routes, payloads, or default ports change within an approved task, update `docs/api.md` and direct regression coverage in the same slice.
+- In two-PC mode, do not treat a receiver-local sender-config copy as live sender configuration or add implicit synchronization.
+
+## Protected Files and State
+
+Do not edit, delete, or inspect contents unless explicitly required:
+
+- Real `config/*.json` files. Change committed `*.example.json` templates when a configuration shape changes.
+- Secrets, credentials, `.env` files, keys, and local settings.
+- Startup registration state.
+- Live hooks, sockets, resident processes, and runtime state.
+- Generated heavy artifacts.
 
 ## Verification
-- `python -m py_compile sender/*.py receiver/*.py input_common/*.py`
-- `python -m unittest discover -s tests`
-- `python -m ruff check .` when ruff is available in the local dev environment
-- `git diff --check`
-- If a check needs a live sender/receiver, name which PC it runs on and report
-  it as blocked if it cannot run.
 
-## Git / Deployment
-- Workspace: `D:/Git/input-relay`. The only push remote is
-  `origin = gitea:iniwa/input-relay`. Do not push to the GitHub mirror
-  unless explicitly requested.
-- Do not commit or push unless explicitly requested.
-- Deployment to the Sub PC agent goes through secretary-bot: after pushing
-  here, bump the `windows-agent/tools/input-relay` submodule pointer in
-  `D:/Git/secretary-bot`, push, then `POST /api/update-code` on the Pi.
+Run the smallest relevant checks:
 
-## Knowledge Persistence
-- `docs/api.md`: JSON API reference (keep in sync with routes).
-- `docs/improvements.md`: improvement checklist (check-to-implement flow).
-- `docs/handoffs/archive/`: completed handoffs retained for implementation
-  history; do not treat them as active work.
-- Durable design decisions go to `AGENTS.md` (Codex reviews them).
+- Compile each touched Python file explicitly with `python -m py_compile <files>`.
+- Run focused unit tests when available, then `python -m unittest discover -s tests` for a broad code change.
+- Run `python -m ruff check .` when Ruff is available in the established development environment.
+- Run `git diff --check`.
+- For documentation-only changes, use `git diff --check` and a focused reference scan.
+- If verification requires a live sender, receiver, hook, socket, OBS page, or startup registration, identify the required process role and report the check as blocked when that environment is unavailable.
 
-## Tooling
-- Use **Serena MCP** tools for code navigation and editing (symbol search,
-  overview, replace, insert, etc.)
-- Use **Tavily MCP** tools for web search and research when needed.
+Tests must not read or write real config, open live input hooks or network services, or alter startup registration unless the handoff explicitly authorizes an integration check.
+
+## Report
+
+Report:
+
+- Changed files.
+- Concise summary.
+- Verification commands and results.
+- Blocked checks.
+- Subagent usage.
+- Design questions for Codex.

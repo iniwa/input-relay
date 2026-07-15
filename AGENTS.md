@@ -1,144 +1,87 @@
 # AGENTS.md
 
 ## Purpose
-This file is the Codex-side document for `input-relay`: design intent,
-handoff rules, and review criteria.
 
-`CLAUDE.md` records execution rules for Claude Code.
-
-For periodic project maintenance (improvement-candidate survey and
-AGENTS.md / CLAUDE.md / README.md refresh), follow
-`CLAUDEmdStrage/_base/PROJECT_MAINTENANCE_ja.md`.
+This is the Codex-side working agreement for `input-relay`. It records design intent, delegation policy, review rules, and durable project constraints. `CLAUDE.md` contains Claude Code execution rules.
 
 ## Project Summary
-- Project name: input-relay (Input Display / OBS Overlay)
-- Purpose: show keyboard / gamepad / mouse input as an OBS browser-source
-  overlay (SF6-style leverless layout + input history), with an optional
-  remote-control mode that injects Main PC input into the Sub PC.
-- Primary users: the owner (single user, home LAN only).
-- Runtime target: two resident Python processes on Windows 11 —
-  `sender` on Main PC (192.168.1.210), `receiver` on Sub PC (192.168.1.211).
-  Standalone 1-PC mode also exists.
-- Repository path: `D:/Git/input-relay` (standalone workspace).
-- Remote: `gitea:iniwa/input-relay` (origin). A GitHub mirror exists but is
-  not pushed from this workspace.
-- Deployment: consumed by `secretary-bot` as a git submodule
-  (`windows-agent/tools/input-relay`) pinned to a commit; Sub PC receives
-  updates when the submodule pointer is bumped in secretary-bot.
 
-## Environment Selection
-- `D:/Git/` -> Home Sub PC / `C:/Git/` -> Home Main PC.
-- sender runs on Main PC, receiver runs on Sub PC. Runtime checks that need
-  a live process must name which PC they run on.
+- Windows input relay and OBS browser-source overlay for keyboard, mouse, and gamepad input.
+- Normal operation uses resident sender and receiver processes on separate Windows PCs over a private LAN. Standalone one-PC mode is also supported.
+- The receiver serves overlay/config pages and relays input. The sender captures input and exposes its local configuration and monitor interfaces.
+- Remote-control mode can inject sender input at the receiver and is safety-sensitive.
+- Python 3.11 with standard-library modules plus the existing `websockets`, `pynput`, and optional `pygame` dependencies.
 
-## Role Split / Model Policy
-- GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and design. Prefer Sol for substantial ambiguity, risk, or cross-boundary reasoning.
-- After design is fixed, GPT-5.6 Luna Max (`gpt-5.6-luna-max`) coordinates implementation through small, sequential handoffs: one independently verifiable route, subsystem boundary, or lifecycle path plus its direct regression tests.
-- Claude Code Sonnet 5 performs delegated edits and verification at effort medium from the repository root: `claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"`.
-- Handoffs state the goal, files, constraints, non-goals, verification, and concrete data sources so Sonnet needs no design judgment. Claude Code implements only the current slice and returns design questions to Codex.
-- Luna Max reviews each result before preparing the next slice. Material design questions return to Terra/Sol instead of changing the approved design.
-- Codex may keep small or design-sensitive changes in one context. Fable 5 is only a medium-effort second opinion for difficult design decisions.
-- Claude Code subagents are optional and limited to clearly parallel mechanical work; they inherit the handoff and may not expand scope, change design, add dependencies, alter deployment or external exposure, or touch secrets.
-- When GPT-5.6 Sol Ultra (`gpt-5.6-sol-ultra`) delegates work to a subagent, use GPT-5.6 Luna Max (`gpt-5.6-luna-max`) or GPT-5.6 Terra (`gpt-5.6-terra`). When using Terra, set its reasoning level from low through high; do not use a level outside that range.
-- On Windows, keep delegated command lines ASCII-only, put non-ASCII instructions in a UTF-8 handoff file, and close background `codex exec` stdin with `$null |`. If an intended model is unavailable, use an available model only when the work remains safe and report the limitation.
+## Read First
 
-## Project-Specific Design Principles
-- Both processes are **resident** (auto-started at login). Stability over
-  features: bounded queues/buffers, reconnect with backoff, cleanup on
-  disconnect, no unbounded growth tied to uptime.
-- Input path is latency-sensitive (overlay display and remote-control
-  injection). Do not add per-event blocking work on the capture or relay
-  path; high-frequency sources stay throttled (raw mouse / gamepad at 60Hz).
-- Keep the stack minimal: stdlib + `websockets` + `pynput` (+ `pygame` for
-  gamepad). No build tooling, no packaging, no CI/CD.
-- Single-file HTML GUIs (`config_gui.html`, `overlay.html`, `sender_gui.html`)
-  are intentional; do not introduce a frontend build system.
-- The `.bat` launchers own dependency installation and `git pull`; keep them
-  compatible when changing dependencies or entry points.
-- Remote-control mode is safety-sensitive: stuck-key prevention, auto-disable
-  on disconnect, and mouse suppression behavior must be preserved.
-- User-local settings live in `config/*.json` (gitignored; `*.example.json`
-  is the committed template). Never commit real config files.
-- In 2PC mode, each PC owns its local config. The live sender reads the Main
-  PC's `config/sender_config.json`; a receiver-side copy cannot configure the
-  Main PC process. Use the sender HTTP GUI/API for live sender changes.
+Before meaningful work, inspect:
+
+- `CLAUDE.md`.
+- `README.md`.
+- `docs/api.md` for route, payload, and port contracts.
+- Relevant active records under `docs/`.
+- The affected sender, receiver, shared module, launcher, example config, and tests.
+
+## Model and Role Policy
+
+- Use GPT-5.3-Codex-Spark (`gpt-5.3-codex-spark`) proactively, when available, for low-risk, well-scoped, independently verifiable supporting work that requires no material design judgment or source-code implementation.
+- GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and design. Whenever Terra is used, set its reasoning level to `high`. Prefer Sol for substantial ambiguity, risk, or cross-boundary reasoning.
+- After design is fixed, delegate source-code implementation first to Claude Code Sonnet 5 at effort medium from the repository root.
+- Only when Sonnet 5 is unavailable because of usage limits or service availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max` for the same implementation slice.
+- Implementation failure, failed verification, or a design question is not model unavailability. Return it to Codex.
+- Apply this policy to every coordinating Codex model and its subagents. Do not create coordinator-specific exceptions.
+- Codex may retain requirements, design, read-only investigation, synthesis, review, and small documentation-consistency changes in one context.
+
+## Durable Project Rules
+
+- Resident stability takes priority: keep queues and buffers bounded, reconnect with backoff, clean up tasks and input state on disconnect, and avoid uptime-dependent growth.
+- Do not add blocking work to capture, relay, injection, or other per-event paths. Preserve throttling for high-frequency mouse and gamepad input.
+- Preserve fail-closed remote-control behavior, stuck-key prevention, disconnect auto-disable, and mouse suppression.
+- Keep the runtime stack minimal. Do not add packaging, CI/CD, a frontend build system, or new dependencies without an approved design.
+- Single-file HTML interfaces are intentional.
+- The `.bat` launchers own startup preparation, dependency installation, and their existing update behavior. Keep them compatible when dependencies or entry points change.
+- Real `config/*.json` files are user-local and ignored. Change committed `*.example.json` files when the configuration shape changes.
+- In two-PC mode, each PC owns its local configuration. The live sender uses the sender PC's file and HTTP interface; a receiver-local sender-config copy does not configure that process.
+- Keep the receiver-local sender-config endpoint for compatibility until an approved API review checks all consumers. Do not add implicit cross-PC synchronization.
+- `docs/api.md` is authoritative for public routes, payloads, and default ports. Update it with any approved contract change.
+- The standalone repository is the development source. Its configured origin is the normal push target; do not push a mirror unless explicitly requested.
+- `secretary-bot` consumes this repository as a pinned submodule. Updating that pointer and deploying it are separate explicitly approved tasks.
+- Preserve the private-LAN exposure boundary. Do not add internet exposure or authentication assumptions without design review.
+
+## Safety and Scope
+
+- Preserve unrelated user and other-agent changes. Treat unexpected diffs as having unknown authorship and keep them outside the current task or commit.
+- Do not edit secrets, credentials, `.env` files, real local config, startup registration state, live runtime state, or generated heavy artifacts unless explicitly required.
+- Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, or external exposure outside the approved scope.
+- Do not commit, push, or deploy unless explicitly requested.
 
 ## Handoff Workflow
-1. Codex reads project context, `AGENTS.md`, `CLAUDE.md`, and relevant files.
-2. Codex writes a concrete handoff file under `docs/handoffs/`
-   (create the directory if it does not exist).
-3. Codex invokes Claude Code non-interactively from the repo root, normally:
-   `claude -p --model sonnet --permission-mode auto "<handoff path + task>"`
-4. Claude Code (Sonnet 5 via `--model sonnet`, permission auto) reads the
-   handoff file, implements, and reports back.
-5. Codex reviews the report and/or diff.
-6. After review is complete, move the handoff to `docs/handoffs/archive/`;
-   keep only active handoffs at the `docs/handoffs/` root.
 
-Handoffs must state: Goal / Background / Files To Inspect / Files To Edit /
-Constraints / Non Goals / Verification / Expected Report
-(same template as `CLAUDEmdStrage/_base/AGENTS.md`).
+- Keep work in Codex when its main value is policy, design, review, synthesis, read-only investigation, or a small documentation-only correction.
+- For substantive implementation, create `docs/handoffs/YYYY-MM-DD-<short-task>.md` with the goal, background, files to inspect, files to edit, constraints, non-goals, verification, and expected report.
+- One handoff covers one cohesive, independently verifiable change and its direct regression coverage. Run unresolved discovery as a separate read-only slice.
+- Size the slice so the first intended edit is reachable after reading the listed files. Do not combine broad discovery, unresolved design, and implementation.
+- If a handoff times out before its intended edit, do not rerun it unchanged. Narrow the behavior, files, and verification first.
+- Sonnet 5 implements only the approved slice. Luna at reasoning level `max` may implement that same slice only under the model-unavailability condition above.
+- Codex reviews the report and diff before preparing a later slice. Material design questions return to Terra or Sol.
+- Keep only active or blocked handoffs in `docs/handoffs/`. Move a handoff to `docs/handoffs/archive/` only after implementation, verification, review, required runtime work, and follow-up are complete.
 
-## Codex Review Checklist
-- Did the diff stay inside the handoff? Did constraints and non-goals hold?
-- Any new dependency, build tooling, packaging, or startup-flow change?
-- Any real `config/*.json`, credentials, or local settings touched?
-- Resident-stability check: does the change add unbounded state, per-event
-  blocking work, or an unthrottled event source?
-- Did verification run (`python -m py_compile`, `python -m unittest discover -s tests`, `python -m ruff check .` where applicable, and manual checks named in the handoff),
-  and are blocked checks explained?
-- Does any discovery need to become a new decision here or in `docs/*.md`?
+## Codex Review
 
-## Knowledge Persistence
-- `docs/api.md`: JSON API reference (keep in sync with receiver dispatch
-  tables, `sender/http_api.py`, and `sender/monitor_ws.py`).
-- `docs/improvements.md`: improvement checklist (check-to-implement flow).
-- `docs/handoffs/`: active Codex handoffs at the directory root; completed
-  handoffs under `docs/handoffs/archive/`.
+Verify that:
 
-## Decision Log
+- Only approved files and behavior changed and unrelated diffs remain untouched.
+- Resident stability, latency, throttling, disconnect cleanup, and remote-control safety were preserved.
+- No real config, startup registration, live hook, socket, or runtime process was touched unexpectedly.
+- No dependency, protocol, port, API, launcher, deployment, submodule, or exposure change appeared outside scope.
+- `docs/api.md` and example config remain synchronized with approved contract changes.
+- Focused automated checks ran and any PC-specific live check is identified or reported as blocked.
 
-### 2026-07-08: Standalone workspace + Gitea-only remote
+## Documentation Lifecycle
 
-Context:
-- Work used to happen inside the secretary-bot submodule checkout, which
-  mixes parent-repo state with tool development.
-
-Decision:
-- Development happens in the standalone clone `D:/Git/input-relay`.
-- The only push remote for this workspace is `gitea:iniwa/input-relay`.
-- secretary-bot consumes the tool as a submodule pinned to a commit; after
-  pushing here, bump the submodule pointer in secretary-bot to deploy to the
-  Sub PC agent.
-- `CLAUDE.md` / `AGENTS.md` are tracked in this repo (the old
-  `.gitignore` entry treating `CLAUDE.md` as personal config was removed).
-
-Constraints Introduced:
-- Do not push to the GitHub mirror from this workspace unless explicitly
-  requested.
-
-Do Not Change Casually:
-- Remote layout, submodule consumption model, ports (8081 receiver HTTP,
-  8888 receiver WS, 8082 sender HTTP, 8083 sender monitor WS — see
-  `docs/api.md` for authoritative values).
-
-### 2026-07-11: Per-PC sender config ownership
-
-Context:
-- Main PC and Sub PC use separate workspaces and separate gitignored config
-  files. The receiver's `/api/sender-config` endpoint writes only the Sub PC
-  workspace, while the resident sender reads the Main PC workspace.
-
-Decision:
-- The Main PC sender GUI/API (default port 8082) is the live configuration
-  path for the sender process.
-- Receiver-local `sender_config.json` data must be described as a local copy,
-  not as live control of the Main PC sender.
-- Keep the receiver `/api/sender-config` contract for compatibility until a
-  dedicated handoff checks all external consumers; do not add implicit config
-  synchronization between PCs.
-
-Constraints Introduced:
-- A sender config UI must identify which PC/file it changes.
-- Removing or repurposing `/api/sender-config` requires API review and a
-  `docs/api.md` update.
+- Keep `AGENTS.md` limited to short, current, durable rules and links.
+- Keep API contracts in `docs/api.md` and improvement candidates in `docs/improvements.md`.
+- Put detailed decisions, evidence, rejected options, and rollout history in `docs/decisions/` when such a record is needed.
+- Move a decision to `docs/decisions/archive/` only after it is fully implemented and no longer needed as current guidance.
+- Keep active or blocked handoffs in `docs/handoffs/` and completed handoffs in `docs/handoffs/archive/`.
+- Do not rewrite completed handoffs or archived decisions merely to match a newer shared policy.
