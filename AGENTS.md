@@ -11,6 +11,7 @@ This is the Codex-side working agreement for `input-relay`. It records design in
 - The receiver serves overlay/config pages and relays input. The sender captures input and exposes its local configuration and monitor interfaces.
 - Remote-control mode can inject sender input at the receiver and is safety-sensitive.
 - Python 3.11 with standard-library modules plus the existing `websockets`, `pynput`, and optional `pygame` dependencies.
+- Receiver and sender HTTP/WebSocket interfaces bind to all local interfaces without application authentication. They are for a trusted private LAN only.
 
 ## Read First
 
@@ -22,14 +23,27 @@ Before meaningful work, inspect:
 - Relevant active records under `docs/`.
 - The affected sender, receiver, shared module, launcher, example config, and tests.
 
+## Instruction Precedence
+
+When instructions conflict, apply them in this order:
+
+1. Runtime, tool, organization, and safety policy.
+2. Explicit user instructions that change project policy.
+3. Durable project instructions.
+4. Other instructions for the current user task and the approved task scope.
+
+The active handoff or equivalent inline prompt is the approved task scope. Verified project facts override generation-source defaults. Only an explicit user instruction to change project policy may revise a durable project rule; other task instructions and approved scopes may narrow durable rules but may not weaken them. Report unresolved conflicts instead of guessing.
+
 ## Model and Role Policy
 
 - Use GPT-5.3-Codex-Spark (`gpt-5.3-codex-spark`) proactively, when available, for low-risk, well-scoped, independently verifiable supporting work that requires no material design judgment or source-code implementation.
 - GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and design. Whenever Terra is used, set its reasoning level to `high`. Prefer Sol for substantial ambiguity, risk, or cross-boundary reasoning.
-- After design is fixed, delegate source-code implementation first to Claude Code Sonnet 5 at effort medium from the repository root.
-- Only when Sonnet 5 is unavailable because of usage limits or service availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max` for the same implementation slice.
-- Implementation failure, failed verification, or a design question is not model unavailability. Return it to Codex.
-- Apply this policy to every coordinating Codex model and its subagents. Do not create coordinator-specific exceptions.
+- Run every Claude Code task with `--permission-mode auto`.
+- After design is fixed, delegate source-code implementation first to Claude Code Sonnet at effort medium from the repository root: `claude -p --model sonnet --effort medium --permission-mode auto "<handoff/task prompt>"`.
+- Only when Sonnet is unavailable because of usage limits or service availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max` for the same implementation slice.
+- Implementation failure, failed verification, or a design question is not model unavailability. Return it to Codex instead of switching models.
+- Apply this policy to every coordinating Codex model and its subagents. Do not create coordinator-specific exceptions unless the user explicitly changes the policy.
+- Claude Code subagents are optional and limited to clearly parallel mechanical work inside the current task scope. They inherit its constraints.
 - Codex may retain requirements, design, read-only investigation, synthesis, review, and small documentation-consistency changes in one context.
 
 ## Durable Project Rules
@@ -46,23 +60,26 @@ Before meaningful work, inspect:
 - `docs/api.md` is authoritative for public routes, payloads, and default ports. Update it with any approved contract change.
 - The standalone repository is the development source. Its configured origin is the normal push target; do not push a mirror unless explicitly requested.
 - `secretary-bot` consumes this repository as a pinned submodule. Updating that pointer and deploying it are separate explicitly approved tasks.
-- Preserve the private-LAN exposure boundary. Do not add internet exposure or authentication assumptions without design review.
+- Preserve the private-LAN exposure and unauthenticated-client boundary. Do not change listen addresses, firewall behavior, ports, authentication, or internet exposure without explicit approval and design review.
 
-## Safety and Scope
+## Safety and Approval Boundaries
 
-- Preserve unrelated user and other-agent changes. Treat unexpected diffs as having unknown authorship and keep them outside the current task or commit.
-- Do not edit secrets, credentials, `.env` files, real local config, startup registration state, live runtime state, or generated heavy artifacts unless explicitly required.
-- Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, or external exposure outside the approved scope.
+- Preserve unrelated user and other-agent changes. Treat unexpected diffs as having unknown authorship and keep them outside the current task unless confirmed.
+- Do not inspect secrets, credentials, or personal data unless their contents are strictly necessary for the approved task.
+- Do not edit secrets, credentials, `.env`, local settings, production data, runtime state, or generated heavy artifacts unless the approved task explicitly requires the change.
+- Never reproduce secrets, credentials, personal data, or private infrastructure values in prompts, handoffs, reports, or external tools.
+- Real `config/*.json`, machine-specific addresses, startup registration, live input hooks, input injection, suppression state, sockets, and resident processes are protected. Inspect or operate them only when the approved task explicitly requires the corresponding live or integration work.
+- Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, authentication, firewall behavior, or external exposure outside the approved task scope.
 - Do not commit, push, or deploy unless explicitly requested.
 
 ## Handoff Workflow
 
 - Keep work in Codex when its main value is policy, design, review, synthesis, read-only investigation, or a small documentation-only correction.
-- For substantive implementation, create `docs/handoffs/YYYY-MM-DD-<short-task>.md` with the goal, background, files to inspect, files to edit, constraints, non-goals, verification, and expected report.
+- For substantive implementation, create `docs/handoffs/YYYY-MM-DD-<short-task>.md` after the goal, background, files to inspect, files to edit, constraints, non-goals, data sources, acceptance criteria, verification, and expected report are clear.
 - One handoff covers one cohesive, independently verifiable change and its direct regression coverage. Run unresolved discovery as a separate read-only slice.
 - Size the slice so the first intended edit is reachable after reading the listed files. Do not combine broad discovery, unresolved design, and implementation.
-- If a handoff times out before its intended edit, do not rerun it unchanged. Narrow the behavior, files, and verification first.
-- Sonnet 5 implements only the approved slice. Luna at reasoning level `max` may implement that same slice only under the model-unavailability condition above.
+- Treat a delegated run that ends before meeting its acceptance criteria as `status=interrupted`, even if its process exits normally. Record usable partial results, completed verification, remaining scope, and the resume condition; narrow a broad handoff before rerunning it.
+- Sonnet implements only the approved slice. Luna at reasoning level `max` may implement that same slice only under the model-unavailability condition above.
 - Codex reviews the report and diff before preparing a later slice. Material design questions return to Terra or Sol.
 - Keep only active or blocked handoffs in `docs/handoffs/`. Move a handoff to `docs/handoffs/archive/` only after implementation, verification, review, required runtime work, and follow-up are complete.
 
@@ -72,10 +89,11 @@ Verify that:
 
 - Only approved files and behavior changed and unrelated diffs remain untouched.
 - Resident stability, latency, throttling, disconnect cleanup, and remote-control safety were preserved.
-- No real config, startup registration, live hook, socket, or runtime process was touched unexpectedly.
-- No dependency, protocol, port, API, launcher, deployment, submodule, or exposure change appeared outside scope.
+- No real config, startup registration, live hook, input injection, suppression state, socket, or runtime process was touched unexpectedly.
+- No dependency, protocol, port, API, launcher, authentication, firewall, deployment, submodule, or exposure change appeared outside scope.
 - `docs/api.md` and example config remain synchronized with approved contract changes.
 - Focused automated checks ran and any PC-specific live check is identified or reported as blocked.
+- The report identifies partial edits, interrupted work, remaining scope, and its safe resume condition.
 
 ## Documentation Lifecycle
 
