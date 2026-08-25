@@ -38,20 +38,20 @@ class AtomicWriteJsonTests(unittest.TestCase):
     def test_temp_file_is_created_in_target_directory(self):
         target = self.dir / "data.json"
         seen_tmp_dirs = []
-        orig_replace = input_server.os.replace
+        orig_replace = input_server.persistent_config.os.replace
 
         def spy_replace(src, dst):
             seen_tmp_dirs.append(Path(src).parent)
             return orig_replace(src, dst)
 
-        with mock.patch.object(input_server.os, "replace", side_effect=spy_replace):
+        with mock.patch.object(input_server.persistent_config.os, "replace", side_effect=spy_replace):
             input_server._atomic_write_json(target, {"a": 1})
         self.assertEqual(seen_tmp_dirs, [self.dir])
 
     def test_temp_file_removed_on_replace_failure(self):
         target = self.dir / "data.json"
         with mock.patch.object(
-            input_server.os, "replace", side_effect=OSError("boom"),
+            input_server.persistent_config.os, "replace", side_effect=OSError("boom"),
         ):
             with self.assertRaises(OSError):
                 input_server._atomic_write_json(target, {"a": 1})

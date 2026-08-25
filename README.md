@@ -106,6 +106,16 @@ python receiver/input_server.py --http-port 8081 --standalone
 反映されない。実行中 sender の接続先、コントローラー、リモート表示を変更する場合は、
 Main PC で `http://localhost:8082/` の Sender GUI を使う。
 
+### 設定ファイルの保存場所と復旧
+
+ユーザー設定はリポジトリ内ではなく、Windows では `%LOCALAPPDATA%\InputRelay` に保存される。
+`INPUT_RELAY_CONFIG_DIR` を設定すると、その値をそのまま保存先として使える。旧版の
+`config/` にある `config.json`、`sender_config.json`、`presets.json`、
+`layout_presets.json` は初回アクセス時に、保存先に同名ファイルがない場合だけ自動コピーされる。
+旧ファイルは変更・削除されない。保存先の既存設定が優先され、更新のたびに直前の内容を最大
+5 個まで同じ保存先にバックアップする。主ファイルが壊れた場合は、最新の有効なバックアップを
+自動復旧する。
+
 ### Sender GUI（Main PC）
 
 `http://localhost:8082/` では receiver 接続先、コントローラー選択、リモート表示、
@@ -169,12 +179,8 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 ├── start_standalone.bat              # 単独モード起動用
 ├── start_sender.bat                  # 2PC: Main PC 起動用
 ├── start_receiver.bat                # 2PC: Sub PC 起動用
-├── config/
-│   ├── config.json                   # キーマッピング設定
-│   ├── sender_config.json            # Sender 接続設定
-│   ├── presets.json                  # 表示プリセット
-│   ├── layout_presets.json           # レイアウトプリセット
-│   ├── *.example.json                # 設定テンプレート
+├── config/                           # 旧設定の移行元 + Git 管理するテンプレート
+│   └── *.example.json                # 設定テンプレート
 ├── input_common/
 │   ├── input_events.py               # キー正規化・共通イベント生成
 │   └── gamepad.py                    # 共有ゲームパッド polling (60Hz)

@@ -29,6 +29,7 @@ from pynput import keyboard, mouse
 
 from input_common.input_events import get_vk as _get_vk
 from input_common.input_events import key_to_str, make_event
+from input_common import persistent_config
 
 # Logging — silent except のトレースを掴めるよう default は INFO、
 # INPUT_RELAY_DEBUG=1 で DEBUG (silenced exception を表示)。
@@ -49,7 +50,8 @@ DEFAULT_MONITOR_PORT = 8083
 RECONNECT_BACKOFF = 3.0           # 接続失敗時の待機 (秒)
 
 # Load config
-CONFIG_PATH = Path(__file__).parent.parent / "config" / "sender_config.json"
+LEGACY_CONFIG_DIR = Path(__file__).parent.parent / "config"
+CONFIG_PATH = persistent_config.get_config_root() / "sender_config.json"
 GUI_PATH = Path(__file__).parent / "sender_gui.html"
 
 _CONFIG_DEFAULTS = {
@@ -100,13 +102,16 @@ def _merge_defaults(loaded, defaults):
 
 
 def load_config():
-    if CONFIG_PATH.exists():
-        loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        return _merge_defaults(loaded, _CONFIG_DEFAULTS)
-    return json.loads(json.dumps(_CONFIG_DEFAULTS))  # deep copy
+    defaults = json.loads(json.dumps(_CONFIG_DEFAULTS))
+    loaded = persistent_config.load_object_json(
+        CONFIG_PATH, defaults, legacy_config_dir=LEGACY_CONFIG_DIR,
+    )
+    return _merge_defaults(loaded, _CONFIG_DEFAULTS)
 
 def save_config(cfg):
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    persistent_config.write_object_json(
+        CONFIG_PATH, cfg, legacy_config_dir=LEGACY_CONFIG_DIR,
+    )
 
 config = load_config()
 

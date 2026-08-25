@@ -14,9 +14,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import urllib.parse
 
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
+
 import websockets
 
 import input_injector
+from input_common import persistent_config
 
 logging.basicConfig(
     level=logging.DEBUG if os.environ.get("INPUT_RELAY_DEBUG") else logging.INFO,
@@ -59,7 +64,8 @@ _sender_synchronized = False
 _RC_SEND_TIMEOUT = 1.0  # seconds; bounded wait on the control plane only, never the input path
 
 OVERLAY_DIR = Path(__file__).parent
-CONFIG_DIR = OVERLAY_DIR.parent / "config"
+LEGACY_CONFIG_DIR = OVERLAY_DIR.parent / "config"
+CONFIG_DIR = persistent_config.get_config_root()
 CONFIG_PATH = CONFIG_DIR / "config.json"
 PRESETS_PATH = CONFIG_DIR / "presets.json"
 LAYOUT_PRESETS_PATH = CONFIG_DIR / "layout_presets.json"
@@ -71,36 +77,22 @@ LAYOUT_PRESETS_PATH = CONFIG_DIR / "layout_presets.json"
 _config_io_lock = threading.RLock()
 
 
-def _atomic_write_json(path, data):
-    """Write JSON to `path` atomically: write to a temp file in the same
-    directory, then os.replace it into place. Must be called while already
-    holding `_config_io_lock`. Best-effort removes the temp file on failure."""
-    import tempfile
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp",
+def _atomic_write_json(path, data, *, migrate_legacy=False):
+    persistent_config.write_object_json(
+        path, data, legacy_config_dir=LEGACY_CONFIG_DIR if migrate_legacy else None,
     )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps(data, indent=2, ensure_ascii=False))
-        os.replace(tmp_name, path)
-    except Exception:
-        try:
-            os.remove(tmp_name)
-        except OSError:
-            pass
-        raise
 
 
 def load_config():
     with _config_io_lock:
-        if CONFIG_PATH.exists():
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        return {}
+        return persistent_config.load_object_json(
+            CONFIG_PATH, {}, legacy_config_dir=LEGACY_CONFIG_DIR,
+        )
 
 
 def save_config(data):
     with _config_io_lock:
-        CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _atomic_write_json(CONFIG_PATH, data, migrate_legacy=True)
 
 
 _PRESET_TYPES = {"keyboard", "leverless", "controller"}
@@ -108,9 +100,9 @@ _PRESET_TYPES = {"keyboard", "leverless", "controller"}
 def load_presets():
     with _config_io_lock:
         empty = {"keyboard": {}, "leverless": {}, "controller": {}}
-        if not PRESETS_PATH.exists():
-            return empty
-        data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        data = persistent_config.load_object_json(
+            PRESETS_PATH, empty, legacy_config_dir=LEGACY_CONFIG_DIR,
+        )
         # Migrate old flat format: { "name": { keyboard, leverless, controller } }
         if data and not all(k in _PRESET_TYPES for k in data.keys()):
             migrated = {"keyboard": {}, "leverless": {}, "controller": {}}
@@ -118,22 +110,22 @@ def load_presets():
                 for t in _PRESET_TYPES:
                     if t in p:
                         migrated[t][name] = {t: p[t]}
-            _atomic_write_json(PRESETS_PATH, migrated)
+            _atomic_write_json(PRESETS_PATH, migrated, migrate_legacy=True)
             return migrated
         return data
 
 
 def save_presets(data):
     with _config_io_lock:
-        _atomic_write_json(PRESETS_PATH, data)
+        _atomic_write_json(PRESETS_PATH, data, migrate_legacy=True)
 
 
 def load_layout_presets():
     with _config_io_lock:
         empty = {"keyboard": {}, "leverless": {}, "controller": {}}
-        if not LAYOUT_PRESETS_PATH.exists():
-            return empty
-        data = json.loads(LAYOUT_PRESETS_PATH.read_text(encoding="utf-8"))
+        data = persistent_config.load_object_json(
+            LAYOUT_PRESETS_PATH, empty, legacy_config_dir=LEGACY_CONFIG_DIR,
+        )
         for t in _PRESET_TYPES:
             if t not in data:
                 data[t] = {}
@@ -142,7 +134,7 @@ def load_layout_presets():
 
 def save_layout_presets(data):
     with _config_io_lock:
-        _atomic_write_json(LAYOUT_PRESETS_PATH, data)
+        _atomic_write_json(LAYOUT_PRESETS_PATH, data, migrate_legacy=True)
 
 
 def _inject_ws_port(html, ws_port):
@@ -352,9 +344,9 @@ def _api_get_remote_control(handler, body):
 def _api_get_sender_config(handler, body):
     sender_cfg_path = CONFIG_DIR / "sender_config.json"
     with _config_io_lock:
-        if sender_cfg_path.exists():
-            return json.loads(sender_cfg_path.read_text(encoding="utf-8"))
-    return {}
+        return persistent_config.load_object_json(
+            sender_cfg_path, {}, legacy_config_dir=LEGACY_CONFIG_DIR,
+        )
 
 
 def _api_post_config(handler, body):
@@ -410,14 +402,13 @@ def _api_post_sender_config(handler, body):
     data = json.loads(body)
     sender_cfg_path = CONFIG_DIR / "sender_config.json"
     with _config_io_lock:
-        if sender_cfg_path.exists():
-            merged = json.loads(sender_cfg_path.read_text(encoding="utf-8"))
-        else:
-            merged = {}
+        merged = persistent_config.load_object_json(
+            sender_cfg_path, {}, legacy_config_dir=LEGACY_CONFIG_DIR,
+        )
         for key in ("host", "port"):
             if key in data:
                 merged[key] = data[key]
-        _atomic_write_json(sender_cfg_path, merged)
+        _atomic_write_json(sender_cfg_path, merged, migrate_legacy=True)
     print(f"[API] sender-config (receiver-local copy) updated by {_client_label(handler)}")
     _broadcast_change("sender_config", {"data": merged})
     return {"ok": True}

@@ -15,18 +15,25 @@ class SenderLauncherStaticTests(unittest.TestCase):
     def test_default_port_variables_are_set_before_config_read(self):
         default_idx = self.text.index('set "HTTP_PORT=8082"')
         default_monitor_idx = self.text.index('set "MONITOR_PORT=8083"')
-        config_read_idx = self.text.index('if exist "config\\sender_config.json"')
+        config_read_idx = self.text.index('load_object_json(Path(os.environ')
         self.assertLess(default_idx, config_read_idx)
         self.assertLess(default_monitor_idx, config_read_idx)
 
     def test_config_derived_ports_are_range_validated_1_to_65535(self):
-        self.assertIn("-ge 1", self.text)
-        self.assertIn("-le 65535", self.text)
+        self.assertIn("s.isascii() and s.isdigit() and int(s) in range(1, 65536)", self.text)
 
     def test_config_is_only_parsed_as_data_never_evaluated(self):
-        self.assertIn("ConvertFrom-Json", self.text)
+        self.assertIn("load_object_json", self.text)
         self.assertNotIn("Invoke-Expression", self.text)
         self.assertNotIn("iex ", self.text.lower())
+
+    def test_backup_aware_loader_receives_legacy_migration_input(self):
+        config_read_idx = self.text.index('load_object_json(Path(os.environ')
+        self.assertIn("legacy_config_dir=Path('config')", self.text[config_read_idx:])
+
+    def test_backup_aware_helper_is_used_for_both_sender_ports(self):
+        self.assertEqual(self.text.count("load_object_json(Path(os.environ"), 2)
+        self.assertIn("newest valid backup", self.text)
 
     def test_firewall_and_url_use_derived_variables_not_literal_ports(self):
         firewall_section = self.text[self.text.index("Configuring firewall"):]

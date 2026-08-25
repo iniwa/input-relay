@@ -28,15 +28,20 @@ echo [3/4] Installing dependencies ...
 pip install pynput websockets pygame >nul 2>&1
 echo.
 
+:: Derive the per-user persistent settings root using the same helper as the
+:: Python sender. The later load copies legacy settings only when no primary
+:: or recoverable backup exists.
+for /f "usebackq delims=" %%P in (`python -c "from input_common.persistent_config import get_config_root; print(get_config_root())"`) do set "PERSISTENT_CONFIG=%%P"
+
 :: Defaults; overridden below only by a validated numeric port (1-65535)
-:: read from the real local sender_config.json. Corrupt/missing/malformed
-:: config silently leaves these defaults untouched. Config is only ever
-:: parsed as data (ConvertFrom-Json), never evaluated/executed.
+:: read from the persistent sender_config.json. The same helper restores the
+:: newest valid backup when the primary is corrupt or missing. Invalid/missing
+:: port values leave these defaults untouched; config is parsed only as data.
 set "HTTP_PORT=8082"
 set "MONITOR_PORT=8083"
-if exist "config\sender_config.json" (
-    for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "try { $j = Get-Content -Raw -Path 'config\sender_config.json' | ConvertFrom-Json -ErrorAction Stop; $n = 0; if ([int]::TryParse([string]$j.http_port, [ref]$n) -and $n -ge 1 -and $n -le 65535) { Write-Output $n } } catch {}"`) do set "HTTP_PORT=%%P"
-    for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "try { $j = Get-Content -Raw -Path 'config\sender_config.json' | ConvertFrom-Json -ErrorAction Stop; $n = 0; if ([int]::TryParse([string]$j.monitor_port, [ref]$n) -and $n -ge 1 -and $n -le 65535) { Write-Output $n } } catch {}"`) do set "MONITOR_PORT=%%P"
+if defined PERSISTENT_CONFIG (
+    for /f "usebackq delims=" %%P in (`python -c "from pathlib import Path; import os; from input_common.persistent_config import load_object_json; cfg = load_object_json(Path(os.environ['PERSISTENT_CONFIG']) / 'sender_config.json', {}, legacy_config_dir=Path('config')); v = cfg.get('http_port'); s = str(v).strip() if type(v) is not bool else ''; print(s if s.isascii() and s.isdigit() and int(s) in range(1, 65536) else '')"`) do set "HTTP_PORT=%%P"
+    for /f "usebackq delims=" %%P in (`python -c "from pathlib import Path; import os; from input_common.persistent_config import load_object_json; cfg = load_object_json(Path(os.environ['PERSISTENT_CONFIG']) / 'sender_config.json', {}, legacy_config_dir=Path('config')); v = cfg.get('monitor_port'); s = str(v).strip() if type(v) is not bool else ''; print(s if s.isascii() and s.isdigit() and int(s) in range(1, 65536) else '')"`) do set "MONITOR_PORT=%%P"
 )
 echo.
 

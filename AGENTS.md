@@ -51,7 +51,7 @@ Before implementation, classify the initial route from acceptance evidence: `sma
 - Keep the runtime stack minimal. Do not add packaging, CI/CD, a frontend build system, or new dependencies without an approved design.
 - Single-file HTML interfaces are intentional.
 - The `.bat` launchers own startup preparation, dependency installation, and their existing update behavior. Keep them compatible when dependencies or entry points change.
-- Real `config/*.json` files are user-local and ignored. Change committed `*.example.json` files when the configuration shape changes.
+- Persistent user settings live outside the checkout; legacy `config/*.json` files are migration input only. Change committed `*.example.json` files when the configuration shape changes.
 - In two-PC mode, each PC owns its local configuration. The live sender uses the sender PC's file and HTTP interface; a receiver-local sender-config copy does not configure that process.
 - Keep the receiver-local sender-config endpoint for compatibility until an approved API review checks all consumers. Do not add implicit cross-PC synchronization.
 - `docs/api.md` is authoritative for public routes, payloads, and default ports. Update it with any approved contract change.
@@ -65,7 +65,7 @@ Before implementation, classify the initial route from acceptance evidence: `sma
 - Do not inspect secrets, credentials, or personal data unless their contents are strictly necessary for the approved task.
 - Do not edit secrets, credentials, `.env`, local settings, production data, runtime state, or generated heavy artifacts unless the approved task explicitly requires the change.
 - Never reproduce secrets, credentials, personal data, or private infrastructure values in prompts, handoffs, reports, or external tools.
-- Real `config/*.json`, machine-specific addresses, startup registration, live input hooks, input injection, suppression state, sockets, and resident processes are protected. Inspect or operate them only when the approved task explicitly requires the corresponding live or integration work.
+- Persistent user settings and legacy `config/*.json` migration inputs, machine-specific addresses, startup registration, live input hooks, input injection, suppression state, sockets, and resident processes are protected. Inspect or operate them only when the approved task explicitly requires the corresponding live or integration work.
 - Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, authentication, firewall behavior, or external exposure outside the approved task scope.
 - Do not commit, push, or deploy unless explicitly requested.
 

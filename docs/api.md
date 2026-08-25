@@ -32,14 +32,20 @@ input-relay は以下の 2 プロセスで構成される (単独モードでは
 
 ### 設定ファイルの場所
 
-receiver から見て `../config/` 配下:
+設定は Windows では `%LOCALAPPDATA%\InputRelay` 配下に保存される。環境変数
+`INPUT_RELAY_CONFIG_DIR` を設定した場合はその値をそのまま保存先として使用する。
+旧 checkout の `config/` にある下記ファイルは、persistent 側に同名ファイルがない初回
+アクセス時だけ自動コピーされる。旧ファイルは変更も削除もされず、persistent 側の既存値が
+常に優先される。保存は atomic で、各ファイルには直前の内容のバックアップが最大 5 個保持
+される。主ファイルが欠損・破損・object 以外の JSON の場合、最新の有効なバックアップを
+自動復旧し、利用可能なバックアップもなければ各 API の既定値を返す。
 
 | ファイル | 内容 |
 |---------|------|
-| `config/config.json` | オーバーレイ表示設定全般 (キーボード/レバーレス/コントローラのレイアウト, 履歴設定など) |
-| `config/presets.json` | プリセット (`{ keyboard: {...}, leverless: {...}, controller: {...} }`) |
-| `config/layout_presets.json` | レイアウト+履歴のみのプリセット (同じ 3 タイプ別) |
-| `config/sender_config.json` | sender 接続先・入力機能・リモートオーバーレイ設定・自身の HTTP/Monitor ポート |
+| `config.json` | オーバーレイ表示設定全般 (キーボード/レバーレス/コントローラのレイアウト, 履歴設定など) |
+| `presets.json` | プリセット (`{ keyboard: {...}, leverless: {...}, controller: {...} }`) |
+| `layout_presets.json` | レイアウト+履歴のみのプリセット (同じ 3 タイプ別) |
+| `sender_config.json` | sender 接続先・入力機能・リモートオーバーレイ設定・自身の HTTP/Monitor ポート |
 
 ---
 
@@ -156,7 +162,8 @@ receiver から見て `../config/` 配下:
 
 ### 2.4 receiver-local sender 設定 (sender_config.json)
 
-receiver が動く PC の `config/sender_config.json` を読み書きするファイル API。
+receiver が動く PC の persistent 設定領域にある `sender_config.json` を読み書きする
+ファイル API。
 通常の 2PC 構成では Main PC と Sub PC は別 workspace のため、**この API で変更する
 Sub PC 側ファイルは Main PC の sender プロセスには反映されない**。実行中 sender の
 設定変更には Main PC の Sender HTTP API (port 8082) を使う。API 互換性のため endpoint
@@ -654,7 +661,7 @@ sender の WebSocket ハンドラ (`sender_handler`) の `finally` cleanup で�
 2. receiver 側で自動的に `/browser` WebSocket 経由でブラウザに通知されるため、追加操作は不要。
 3. Main PC sender の live 設定は `POST http://<sender>:8082/api/config` で変更する。
    `http_port` / `monitor_port` など同 API が受け付けない項目は Main PC 側の
-   `sender_config.json` を変更して sender を再起動する。receiver の
+   persistent 設定領域にある `sender_config.json` を変更して sender を再起動する。receiver の
    `/api/sender-config` は Sub PC ローカルのファイル API であり、Main PC には転送しない。
 
 ### 7.2 変更を監視する

@@ -56,7 +56,7 @@ Read:
 - Do not inspect secrets, credentials, or personal data unless their contents are strictly necessary for the approved task.
 - Do not edit secrets, credentials, `.env`, local settings, production data, runtime state, or generated heavy artifacts unless the approved task explicitly requires the change.
 - Never reproduce secrets, credentials, personal data, or private infrastructure values in prompts, handoffs, reports, or external tools.
-- Real `config/*.json` files are user-local and ignored. Change committed `*.example.json` templates when an approved task changes the configuration shape; do not inspect real values merely to infer it.
+- Persistent user settings live outside the checkout; legacy `config/*.json` files are migration input only. Change committed `*.example.json` templates when an approved task changes the configuration shape; do not inspect real values merely to infer it.
 - Do not alter startup registration or operate live keyboard, mouse, gamepad, injection, suppression, socket, browser, OBS, or resident-process state unless the approved task explicitly authorizes that integration work.
 - Keep machine-specific addresses, accounts, paths, and device settings in ignored local configuration, not shared documentation.
 
