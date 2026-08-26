@@ -33,6 +33,9 @@ browser_clients = set()
 _browser_lock = asyncio.Lock()
 _BROWSER_SEND_TIMEOUT = 1.0  # seconds; a stalled client must not block others/RC injection
 sender_ws = None
+_DISPLAY_MODES = {"keyboard", "leverless", "controller"}
+_display_mode = "keyboard"
+_display_mode_lock = threading.Lock()
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
 _http_server = None  # ThreadingHTTPServer instance, for shutdown
@@ -445,15 +448,24 @@ def _api_post_remote_control(handler, body):
 
 def _api_post_mode_switch(handler, body):
     data = json.loads(body)
-    mode = data.get("mode", "keyboard")
-    msg = json.dumps({
+    if not isinstance(data, dict):
+        raise ApiError("mode-switch body must be an object")
+    mode = data.get("mode")
+    if not isinstance(mode, str) or mode not in _DISPLAY_MODES:
+        raise ApiError("mode must be keyboard, leverless, or controller")
+    with _display_mode_lock:
+        global _display_mode
+        _display_mode = mode
+    control = {
         "type": "mode_switch",
         "key": mode,
         "source": "system",
         "timestamp": time.time(),
-    })
+    }
+    msg = json.dumps(control)
     if _ws_loop:
         asyncio.run_coroutine_threadsafe(broadcast_to_browsers(msg), _ws_loop)
+    _notify_sender_async(control)
     return {"ok": True}
 
 
@@ -728,6 +740,12 @@ async def sender_handler(ws):
         _sender_synchronized = False
     print(f"[Sender] Connected from {ws.remote_address}")
     try:
+        with _display_mode_lock:
+            current_mode = _display_mode
+        await ws.send(json.dumps({
+            "type": "mode_switch", "key": current_mode,
+            "source": "system", "timestamp": time.time(),
+        }))
         async for msg in ws:
             try:
                 event = json.loads(msg)

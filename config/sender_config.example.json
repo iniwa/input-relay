@@ -8,5 +8,9 @@
     "position": "top-left"
   },
   "http_port": 8082,
-  "monitor_port": 8083
+  "monitor_port": 8083,
+  "mode_device_preferences": {
+    "controller": null,
+    "leverless": null
+  }
 }

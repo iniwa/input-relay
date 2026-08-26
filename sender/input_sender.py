@@ -67,6 +67,10 @@ _CONFIG_DEFAULTS = {
     },
     "http_port": DEFAULT_HTTP_PORT,
     "monitor_port": DEFAULT_MONITOR_PORT,
+    "mode_device_preferences": {
+        "controller": None,
+        "leverless": None,
+    },
 }
 
 
@@ -101,12 +105,44 @@ def _merge_defaults(loaded, defaults):
     return loaded
 
 
+def normalize_device_identity(value):
+    """Return a safe persisted device identity, otherwise None.
+
+    Keep this validation local to the config-load boundary so corrupt or
+    hand-edited persistent settings can only disable a preference, never
+    select a device through Python's loose bool/int equality.
+    """
+    if not isinstance(value, dict):
+        return None
+    if set(value) == {"guid"} and isinstance(value["guid"], str) and value["guid"]:
+        return {"guid": value["guid"]}
+    fallback = {"name", "buttons", "axes", "hats"}
+    if set(value) != fallback or not isinstance(value.get("name"), str) or not value["name"]:
+        return None
+    if any(isinstance(value[key], bool) or not isinstance(value[key], int) or value[key] < 0
+           for key in ("buttons", "axes", "hats")):
+        return None
+    return {key: value[key] for key in ("name", "buttons", "axes", "hats")}
+
+
+def normalize_mode_device_preferences(value):
+    """Keep only supported persisted preference slots during config load."""
+    if not isinstance(value, dict):
+        return {"controller": None, "leverless": None}
+    return {mode: normalize_device_identity(value.get(mode))
+            for mode in ("controller", "leverless")}
+
+
 def load_config():
     defaults = json.loads(json.dumps(_CONFIG_DEFAULTS))
     loaded = persistent_config.load_object_json(
         CONFIG_PATH, defaults, legacy_config_dir=LEGACY_CONFIG_DIR,
     )
-    return _merge_defaults(loaded, _CONFIG_DEFAULTS)
+    config = _merge_defaults(loaded, _CONFIG_DEFAULTS)
+    config["mode_device_preferences"] = normalize_mode_device_preferences(
+        config.get("mode_device_preferences"),
+    )
+    return config
 
 def save_config(cfg):
     persistent_config.write_object_json(
@@ -418,6 +454,10 @@ async def _recv_from_receiver(ws):
                 data = json.loads(msg)
                 if data.get("type") == "remote_control":
                     _set_remote_mode(data.get("enabled", False))
+                elif data.get("type") == "mode_switch":
+                    mode = data.get("key")
+                    if mode in ("keyboard", "leverless", "controller") and _gamepad is not None:
+                        _gamepad.set_display_mode(mode)
             except (json.JSONDecodeError, ValueError):
                 pass
     except websockets.ConnectionClosed:
@@ -621,6 +661,8 @@ async def main():
 
     if config.get("gamepad_enabled", False):
         _gamepad = gamepad_mod.Gamepad(emit_callback=_emit_gamepad, is_running=lambda: running)
+        for mode, preference in config["mode_device_preferences"].items():
+            _gamepad.set_mode_preference(mode, preference)
         gp_thread = threading.Thread(target=_gamepad.run, daemon=True)
         gp_thread.start()
     else:

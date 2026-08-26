@@ -39,13 +39,16 @@ class Gamepad:
         self._emit = emit_callback
         self._is_running = is_running
         self._lock = threading.Lock()
-        self._selected_id = 0
+        self._selected_id: int | None = 0
+        self._manual_selected_id = 0
+        self._display_mode = "keyboard"
+        self._mode_preferences = {"controller": None, "leverless": None}
         self._request_refresh = False
         self._info: list[dict] = []
         self._pygame = None  # 遅延 import
 
     # --- public API (thread-safe) ---
-    def selected_id(self) -> int:
+    def selected_id(self) -> int | None:
         with self._lock:
             return self._selected_id
 
@@ -55,7 +58,29 @@ class Gamepad:
 
     def select(self, controller_id: int) -> None:
         with self._lock:
+            self._manual_selected_id = controller_id
+            # Manual selection is an explicit GUI recovery action.  It must
+            # work even while the active stored preference is absent or
+            # ambiguous, so the operator can select this device and save it
+            # as the replacement.  A later scan/mode resolution still
+            # reapplies the stored preference unless it has been replaced.
             self._selected_id = controller_id
+
+    def set_display_mode(self, mode: str) -> None:
+        """Apply a receiver display-mode change outside the input hot path."""
+        with self._lock:
+            self._display_mode = mode
+            self._resolve_preference_locked()
+
+    def set_mode_preference(self, mode: str, preference: dict | None) -> None:
+        with self._lock:
+            self._mode_preferences[mode] = preference
+            self._resolve_preference_locked()
+
+    def mode_preferences(self) -> dict:
+        with self._lock:
+            return {mode: dict(value) if value is not None else None
+                    for mode, value in self._mode_preferences.items()}
 
     def request_refresh(self) -> None:
         with self._lock:
@@ -85,18 +110,43 @@ class Gamepad:
             try:
                 j = pg.joystick.Joystick(i)
                 j.init()
-                controllers.append({
+                info = {
                     "id": i,
                     "name": j.get_name(),
                     "buttons": j.get_numbuttons(),
                     "axes": j.get_numaxes(),
                     "hats": j.get_numhats(),
-                })
+                }
+                try:
+                    guid = j.get_guid()
+                except Exception:
+                    guid = ""
+                if isinstance(guid, str) and guid:
+                    info["identity"] = {"guid": guid}
+                else:
+                    info["identity"] = {
+                        "name": info["name"], "buttons": info["buttons"],
+                        "axes": info["axes"], "hats": info["hats"],
+                    }
+                controllers.append(info)
             except Exception:
                 logger.debug("scan: skipping joystick %d", i, exc_info=True)
         with self._lock:
             self._info = controllers
+            self._resolve_preference_locked()
         return controllers
+
+    def _active_preference_locked(self) -> dict | None:
+        return self._mode_preferences.get(self._display_mode)
+
+    def _resolve_preference_locked(self) -> None:
+        """Resolve the active preference; no unique match means no capture."""
+        preference = self._active_preference_locked()
+        if preference is None:
+            self._selected_id = self._manual_selected_id
+            return
+        matches = [info for info in self._info if info.get("identity") == preference]
+        self._selected_id = matches[0]["id"] if len(matches) == 1 else None
 
     def _emit_btn(self, name: str, is_down: bool) -> None:
         etype = "key_down" if is_down else "key_up"
@@ -181,13 +231,27 @@ class Gamepad:
 
             target_id = self.selected_id()
 
+            # A configured preference can deliberately resolve to None when
+            # absent or ambiguous.  Release the outgoing device immediately
+            # and wait for a later scan/mode change to produce one match.
+            if state["joy"] is not None and target_id != state["joy_id"]:
+                self._reset_joy(state)
+                state["joy_id"] = -1
+
             if state["joy"] is None and time.time() - state["last_reinit"] > RESCAN_INTERVAL:
                 pg.joystick.quit()
                 pg.joystick.init()
                 state["last_reinit"] = time.time()
                 self._scan()
+                # `_scan()` can resolve an active preference to a new index
+                # or to no unique device. Never poll once using the value
+                # captured before that scan.
+                target_id = self.selected_id()
 
             count = pg.joystick.get_count()
+            if target_id is None:
+                time.sleep(DISCONNECT_SLEEP)
+                continue
             if count == 0:
                 if state["joy"] is not None:
                     self._reset_joy(state)

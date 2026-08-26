@@ -53,6 +53,15 @@ class SenderConfigDefaultsTests(unittest.TestCase):
         self.assertEqual(input_sender._CONFIG_DEFAULTS["http_port"], 8082)
         self.assertEqual(input_sender._CONFIG_DEFAULTS["monitor_port"], 8083)
 
+    def test_invalid_persisted_device_identity_is_disabled(self):
+        self.assertEqual(
+            input_sender.normalize_mode_device_preferences({
+                "controller": {"name": "Pad", "buttons": True, "axes": 4, "hats": 1},
+                "leverless": {"guid": "valid"},
+            }),
+            {"controller": None, "leverless": {"guid": "valid"}},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

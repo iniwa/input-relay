@@ -15,12 +15,13 @@ from input_common.gamepad import Gamepad
 class FakeJoystick:
     """Stand-in for pygame.joystick.Joystick: no SDL, no real hardware."""
 
-    def __init__(self, idx, name="FakePad", buttons=None, axes=None, hats=None):
+    def __init__(self, idx, name="FakePad", buttons=None, axes=None, hats=None, guid=""):
         self.idx = idx
         self._name = name
         self.buttons = list(buttons if buttons is not None else [])
         self.axes = list(axes if axes is not None else [])
         self.hats = list(hats if hats is not None else [])
+        self._guid = guid
         self.inited = False
 
     def init(self):
@@ -28,6 +29,9 @@ class FakeJoystick:
 
     def get_name(self):
         return self._name
+
+    def get_guid(self):
+        return self._guid
 
     def get_numbuttons(self):
         return len(self.buttons)
@@ -180,6 +184,67 @@ class SwitchNeutralizationTests(unittest.TestCase):
         self.assertIs(state["joy"], j1)
         self.assertEqual(state["joy_id"], 1)
         self.assertEqual(state["prev_buttons"], {})
+
+
+class ModeDevicePreferenceTests(unittest.TestCase):
+    """Mode preferences follow physical identity, never a stale SDL index."""
+
+    def setUp(self):
+        self.gp = Gamepad(emit_callback=lambda msg: None, is_running=lambda: True)
+
+    def _scan(self, controllers):
+        self.gp._pygame = FakePygame(controllers=controllers)
+        return self.gp._scan()
+
+    def test_guid_preference_resolves_after_index_change(self):
+        self._scan([
+            FakeJoystick(0, name="Other", guid="other"),
+            FakeJoystick(1, name="Preferred", guid="preferred"),
+        ])
+        self.gp.set_mode_preference("controller", {"guid": "preferred"})
+        self.gp.set_display_mode("controller")
+        self.assertEqual(self.gp.selected_id(), 1)
+
+        self._scan([
+            FakeJoystick(0, name="Preferred", guid="preferred"),
+            FakeJoystick(1, name="Other", guid="other"),
+        ])
+        self.assertEqual(self.gp.selected_id(), 0)
+
+    def test_missing_or_ambiguous_preference_neutralizes_capture(self):
+        self.gp.set_mode_preference(
+            "leverless", {"name": "Same", "buttons": 12, "axes": 4, "hats": 1},
+        )
+        self.gp.set_display_mode("leverless")
+        self._scan([FakeJoystick(0, name="Other", buttons=[0])])
+        self.assertIsNone(self.gp.selected_id())
+
+        self._scan([
+            FakeJoystick(0, name="Same", buttons=[0] * 12, axes=[0] * 4, hats=[(0, 0)]),
+            FakeJoystick(1, name="Same", buttons=[0] * 12, axes=[0] * 4, hats=[(0, 0)]),
+        ])
+        self.assertIsNone(self.gp.selected_id())
+
+    def test_clearing_preference_restores_manual_selection(self):
+        self.gp.select(1)
+        self.gp.set_mode_preference("controller", {"guid": "missing"})
+        self.gp.set_display_mode("controller")
+        self.assertIsNone(self.gp.selected_id())
+        self.gp.set_mode_preference("controller", None)
+        self.assertEqual(self.gp.selected_id(), 1)
+
+    def test_manual_selection_temporarily_overrides_unresolved_preference(self):
+        self.gp.set_mode_preference("controller", {"guid": "missing"})
+        self.gp.set_display_mode("controller")
+        self.assertIsNone(self.gp.selected_id())
+
+        self.gp.select(1)
+        self.assertEqual(self.gp.selected_id(), 1)
+
+        # Preference resolution on a subsequent scan retains the fail-closed
+        # behavior until the GUI replaces or clears the stored preference.
+        self._scan([FakeJoystick(0, guid="other"), FakeJoystick(1, guid="other2")])
+        self.assertIsNone(self.gp.selected_id())
 
 
 class RecoveryAfterExceptionTests(unittest.TestCase):

@@ -24,6 +24,39 @@ logger = logging.getLogger("http_api")
 
 REFRESH_WAIT = 0.3   # GUI からの refresh 後 gamepad 反映待ち (秒)
 RESTART_DELAY = 0.5  # GUI からの restart 要求遅延 (秒)
+_PREFERENCE_MODES = {"controller", "leverless"}
+
+
+def _valid_device_identity(value):
+    """Return a normalized device identity, or None for an invalid shape."""
+    if not isinstance(value, dict):
+        return None
+    if set(value) == {"guid"} and isinstance(value["guid"], str) and value["guid"]:
+        return {"guid": value["guid"]}
+    fallback = {"name", "buttons", "axes", "hats"}
+    if set(value) != fallback or not isinstance(value.get("name"), str) or not value["name"]:
+        return None
+    if any(isinstance(value[key], bool) or not isinstance(value[key], int) or value[key] < 0
+           for key in ("buttons", "axes", "hats")):
+        return None
+    return {key: value[key] for key in ("name", "buttons", "axes", "hats")}
+
+
+def _parse_mode_device_preference(data):
+    """Validate one mode-preference API payload without mutating state."""
+    if not isinstance(data, dict):
+        raise ValueError("request body must be an object")
+    mode = data.get("mode")
+    if not isinstance(mode, str) or mode not in _PREFERENCE_MODES:
+        raise ValueError("mode must be controller or leverless")
+    if "device" not in data:
+        raise ValueError("device is required")
+    device = data["device"]
+    if device is not None:
+        device = _valid_device_identity(device)
+        if device is None:
+            raise ValueError("invalid device identity")
+    return mode, device
 
 
 @dataclass
@@ -90,6 +123,7 @@ def make_handler(ctx: SenderContext):
                     "enabled": bool(config.get("gamepad_enabled", False)),
                     "controllers": gamepad.info() if gamepad else [],
                     "selected": gamepad.selected_id() if gamepad else 0,
+                    "mode_device_preferences": config.get("mode_device_preferences", {}),
                 })
             elif path == "/api/status":
                 config = ctx.get_config()
@@ -117,6 +151,8 @@ def make_handler(ctx: SenderContext):
                 self._handle_select_controller()
             elif path == "/api/refresh-controllers":
                 self._handle_refresh_controllers()
+            elif path == "/api/mode-device-preference":
+                self._handle_mode_device_preference()
             elif path == "/api/restart":
                 self._handle_restart()
             else:
@@ -191,7 +227,27 @@ def make_handler(ctx: SenderContext):
                 "controllers": controllers,
                 "selected": sel,
                 "count": len(controllers),
+                "mode_device_preferences": ctx.get_config().get("mode_device_preferences", {}),
             })
+
+        def _handle_mode_device_preference(self):
+            data = self._read_body()
+            try:
+                mode, device = _parse_mode_device_preference(data)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, 400)
+                return
+            config = ctx.get_config()
+            preferences = config.get("mode_device_preferences")
+            if not isinstance(preferences, dict):
+                preferences = {}
+            preferences[mode] = device
+            config["mode_device_preferences"] = preferences
+            ctx.save_config(config)
+            gamepad = ctx.get_gamepad()
+            if gamepad is not None:
+                gamepad.set_mode_preference(mode, device)
+            self._send_json({"ok": True, "mode": mode, "device": device})
 
         def _handle_restart(self):
             self._send_json({"ok": True, "message": "Restarting..."})

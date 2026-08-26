@@ -255,6 +255,14 @@
   <div id="controllerList" class="controller-list">
     <div class="no-controllers">読み込み中...</div>
   </div>
+  <p class="hint">一覧で選択したコントローラを、各オーバーレイ表示モード用に固定できます。未接続・重複時は別のコントローラへ切り替わらず、入力を停止します。</p>
+  <div class="btn-row">
+    <button class="btn-secondary" onclick="saveModePreference('controller')">Controller モードに保存</button>
+    <button class="btn-secondary" onclick="clearModePreference('controller')">Controller を解除</button>
+    <button class="btn-secondary" onclick="saveModePreference('leverless')">Leverless モードに保存</button>
+    <button class="btn-secondary" onclick="clearModePreference('leverless')">Leverless を解除</button>
+  </div>
+  <div id="modePreferenceStatus" class="hint"></div>
   <div id="controllerStatus" class="status"></div>
 </div>
 
@@ -330,12 +338,16 @@ function normalizePort(value, defaultPort) {
 
 let loadedConfig = null;
 let monitorPort = 8083;
+let loadedControllers = [];
+let selectedControllerId = null;
+let modeDevicePreferences = {};
 
 async function loadConfig() {
   try {
     const res = await fetch(API + '/api/config');
     const cfg = await res.json();
     loadedConfig = cfg;
+    modeDevicePreferences = cfg.mode_device_preferences || {};
     monitorPort = normalizePort(cfg.monitor_port, 8083);
     document.getElementById('host').value = cfg.host || '';
     document.getElementById('port').value = cfg.port || 8765;
@@ -402,6 +414,7 @@ async function refreshControllers() {
   try {
     const res = await fetch(API + '/api/refresh-controllers', { method: 'POST' });
     const data = await res.json();
+    modeDevicePreferences = data.mode_device_preferences || modeDevicePreferences;
     statusEl.className = 'status info';
     statusEl.textContent = `${data.count} 個のコントローラを検出しました`;
     setTimeout(() => { statusEl.className = 'status'; }, 3000);
@@ -416,6 +429,7 @@ async function loadControllers() {
   try {
     const res = await fetch(API + '/api/controllers');
     const data = await res.json();
+    modeDevicePreferences = data.mode_device_preferences || modeDevicePreferences;
     renderControllers(data.controllers, data.selected);
   } catch (e) {
     document.getElementById('controllerList').innerHTML =
@@ -424,9 +438,12 @@ async function loadControllers() {
 }
 
 function renderControllers(controllers, selectedId) {
+  loadedControllers = controllers || [];
+  selectedControllerId = selectedId;
   const container = document.getElementById('controllerList');
   if (!controllers || controllers.length === 0) {
     container.innerHTML = '<div class="no-controllers">コントローラが見つかりません</div>';
+    renderModePreferenceStatus();
     return;
   }
   container.innerHTML = controllers.map(c => {
@@ -439,6 +456,63 @@ function renderControllers(controllers, selectedId) {
         <span class="controller-info">ID: ${c.id} / ボタン: ${c.buttons} / 軸: ${c.axes} / ハット: ${c.hats}</span>
       </div>`;
   }).join('');
+  renderModePreferenceStatus();
+}
+
+function preferenceName(preference) {
+  if (!preference) return '未設定';
+  const match = loadedControllers.find(c => JSON.stringify(c.identity) === JSON.stringify(preference));
+  return match ? escapeHtml(match.name) : '接続待ち';
+}
+
+function renderModePreferenceStatus() {
+  document.getElementById('modePreferenceStatus').innerHTML =
+    `Controller: ${preferenceName(modeDevicePreferences.controller)} / ` +
+    `Leverless: ${preferenceName(modeDevicePreferences.leverless)}`;
+}
+
+async function saveModePreference(mode) {
+  const controller = loadedControllers.find(c => c.id === selectedControllerId);
+  const statusEl = document.getElementById('controllerStatus');
+  if (!controller || !controller.identity) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '先に保存するコントローラを一覧から選択してください';
+    return;
+  }
+  try {
+    const res = await fetch(API + '/api/mode-device-preference', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, device: controller.identity })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '保存に失敗しました');
+    modeDevicePreferences[mode] = data.device;
+    renderModePreferenceStatus();
+    statusEl.className = 'status ok';
+    statusEl.textContent = `${mode} モード用のデバイスを保存しました`;
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '保存に失敗しました: ' + e.message;
+  }
+}
+
+async function clearModePreference(mode) {
+  const statusEl = document.getElementById('controllerStatus');
+  try {
+    const res = await fetch(API + '/api/mode-device-preference', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, device: null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '解除に失敗しました');
+    modeDevicePreferences[mode] = null;
+    renderModePreferenceStatus();
+    statusEl.className = 'status ok';
+    statusEl.textContent = `${mode} モード用のデバイス設定を解除しました`;
+  } catch (e) {
+    statusEl.className = 'status err';
+    statusEl.textContent = '解除に失敗しました: ' + e.message;
+  }
 }
 
 async function selectController(id) {

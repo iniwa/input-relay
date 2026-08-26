@@ -267,11 +267,13 @@ sender 接続直後は必ず unsynchronized から始まり、その sender 自�
 
 #### `POST /api/mode-switch`
 
-ブラウザ側オーバーレイの表示モードを切替えるための push のみ行う (サーバー側に状態を保存しない)。
+ブラウザ側オーバーレイの表示モードを切替え、接続中 Main PC sender にも同じ
+control message を送る。receiver は最新モードをメモリ中に保持し、新たに接続した
+sender にも直ちに送る（永続設定ではない）。
 
 リクエストボディ:
 ```json
-{ "mode": "keyboard" }   // 任意の文字列。ブラウザ側で解釈
+{ "mode": "keyboard" }   // "keyboard" | "leverless" | "controller"
 ```
 
 レスポンス: `{ "ok": true }`
@@ -379,6 +381,7 @@ JSON でない or パース不可能なメッセージは無視される。
 | type | 用途 |
 |------|------|
 | `remote_control` | receiver 側 GUI/API のトグル結果を sender に通知 (`{"type":"remote_control","enabled":<bool>}`)。ON への切替はこの通知が sender へ実際に届いた場合のみ API 成功として扱う |
+| `mode_switch` | 現在の表示モード (`key`: `keyboard` / `leverless` / `controller`)。`POST /api/mode-switch` 時と sender 接続直後に送られる。sender は controller/leverless の保存済みデバイス優先設定を解決する |
 
 新規接続の sender は、その接続自身が上記の状態メッセージを送るまで
 unsynchronized 扱いで、たとえ receiver 側に古い ON 状態が残っていても注入は
@@ -410,7 +413,11 @@ unsynchronized 扱いで、たとえ receiver 側に古い ON 状態が残って
   "target_name": "Sub PC",
   "remote_overlay": { "enabled": true, "position": "top-left" },
   "http_port": 8082,
-  "monitor_port": 8083
+  "monitor_port": 8083,
+  "mode_device_preferences": {
+    "controller": { "guid": "..." },
+    "leverless": null
+  }
 }
 ```
 
@@ -472,7 +479,9 @@ sender の現在状態。
 }
 ```
 
-`controllers` の中身は pygame の joystick 情報 (id, name 等) 。
+`controllers` の中身は pygame の joystick 情報 (id, name 等) と、保存に使う
+`identity` を含む。`identity` は GUID が取得できる場合 `{ "guid": "..." }`、
+取得できない場合は `{ "name", "buttons", "axes", "hats" }` の署名になる。
 
 ### 4.6 `POST /api/select-controller`
 
@@ -500,7 +509,21 @@ sender の現在状態。
 }
 ```
 
-### 4.8 `POST /api/restart`
+### 4.8 `POST /api/mode-device-preference`
+
+controller / leverless 表示モード用の Main PC ローカルなデバイス優先設定を保存・解除する。
+
+```json
+{ "mode": "controller", "device": { "guid": "..." } }
+```
+
+`mode` は `controller` または `leverless` のみ。`device` は `GET /api/controllers` の
+`identity` をそのまま渡すか、`null` を渡して解除する。不正な mode / identity は 400。
+保存済み identity が scan 後に見つからない、または fallback 署名が複数に一致する場合、
+sender は別のデバイスへフォールバックせず入力を中立化する。設定を解除した場合は従来の
+手動選択へ戻る。
+
+### 4.9 `POST /api/restart`
 
 sender プロセスを `os.execv` で再起動。
 
