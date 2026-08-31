@@ -36,7 +36,8 @@ The active handoff or equivalent inline prompt is the approved task scope. Verif
 
 ## Delegation and Role Policy
 
-- The user selects the primary model at runtime. Use native Codex delegation: one `bounded_implementer` for settled, cohesive work; use `adaptive_implementer` directly when acceptance depends on unresolved native/platform or cross-layer lifecycle behavior.
+- Use GPT-5.6 Sol as the preferred main worker; the user's actual runtime model and reasoning choice remains authoritative. Sol owns intent, design, approval boundaries, integration, and user communication and can directly finish small or transfer-negative work. Use configured Luna roles (`bounded_explorer`/`bounded_implementer`) for bounded work and Terra roles (`adaptive_implementer`/`bounded_reviewer`) for adaptive implementation or risk-justified review; do not force delegation or pin the main reasoning level in project instructions.
+- Use native Codex delegation: one `bounded_implementer` for settled, cohesive work; use `adaptive_implementer` directly when acceptance depends on unresolved native/platform or cross-layer lifecycle behavior.
 - Use `bounded_explorer` only for independent read-only discovery and `bounded_reviewer` only for a concrete correctness, security, compatibility, or verification risk after the writer's stable self-review gate. If implementation changes after review, treat the review as diagnostic and request at most one fresh final review when risk warrants it.
 - Keep one writer for overlapping files. A second correction round, or two blocked/partial returns, triggers a contract reset before further delegation. If a role is unavailable or its selection is unobservable, continue in the primary session or use an observable agent with equivalent constraints; Claude Code is unapproved unless the user explicitly changes this policy.
 - Prefer the smallest correct change, reuse existing/platform-native capabilities, and make approval boundaries and definition of done explicit in the handoff. Verify the final diff and required checks before reporting completion.
@@ -61,13 +62,31 @@ Before implementation, classify the initial route from acceptance evidence: `sma
 
 ## Safety and Approval Boundaries
 
+Personal-use iteration is the default unless the user or verified project
+requirements establish stronger obligations. Make the smallest normal-path
+change, use a brief useful check, perform routine reversible
+deployment/application and any necessary restart through the known existing
+user-controlled target and procedure, smoke normal use, fix observed errors,
+and finish when normal operation works. Do not require speculative edge-case
+coverage, hardening, abstractions, new tests, an offline harness, or a full
+suite for ordinary changes. Required live-input, security, data, and approval
+gates remain in force; a required pre-application review receives a stable
+source/diff candidate before runtime application. The initial implementation or
+fix request supplies standing permission for this bounded routine cycle, so no
+fresh confirmation is needed. This does not infer Git commit/push/merge,
+publication/release/registry or hosted-config changes, credentials/permissions/
+exposure, destructive data or migrations, new targets or cost, or
+project-specific protected operations. If a target or check is unavailable,
+report readiness separately; record only required deferred checks in the
+existing issue or ledger with verification, approval, and resume conditions.
+
 - Preserve unrelated user and other-agent changes. Treat unexpected diffs as having unknown authorship and keep them outside the current task unless confirmed.
 - Do not inspect secrets, credentials, or personal data unless their contents are strictly necessary for the approved task.
 - Do not edit secrets, credentials, `.env`, local settings, production data, runtime state, or generated heavy artifacts unless the approved task explicitly requires the change.
 - Never reproduce secrets, credentials, personal data, or private infrastructure values in prompts, handoffs, reports, or external tools.
 - Persistent user settings and legacy `config/*.json` migration inputs, machine-specific addresses, startup registration, live input hooks, input injection, suppression state, sockets, and resident processes are protected. Inspect or operate them only when the approved task explicitly requires the corresponding live or integration work.
-- Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment, submodule pointers, authentication, firewall behavior, or external exposure outside the approved task scope.
-- Do not commit, push, or deploy unless explicitly requested.
+- Do not add dependencies or change protocols, default ports, launchers, packaging, CI/CD, deployment procedure or configuration, submodule pointers, authentication, firewall behavior, or external exposure outside the approved task scope.
+- Do not commit or push unless explicitly requested. Routine reversible deployment/application and necessary restart may use the bounded personal-use allowance above on the established target and known procedure; other deployment requires explicit authorization. The separate secretary-bot submodule and its deployment gate remain independently controlled.
 
 ## Handoff Workflow
 
