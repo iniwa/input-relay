@@ -3,10 +3,9 @@
 コードベースを調査して洗い出した改善候補の一覧
 （初回調査: 2026-07-08 / 再調査: 2026-07-08、2026-07-11）。
 
-**運用方法**: 着手したい項目にチェック `[x]` を入れる → Codex が handoff を作成し、
-Claude Code（`claude -p --model sonnet --effort medium --permission-mode auto "<handoff/task prompt>"` / Sonnet）が
-実装する。handoff を挟むまでもない
-小粒な項目は Claude Code に直接依頼してもよい。
+**運用方法**: 着手したい項目にチェック `[x]` を入れる → runtime で選択された
+primary が必要に応じて handoff を作成し、`AGENTS.md` の native Codex role policy に
+従って実装する。handoff を挟むまでもない小粒な項目は primary context で扱ってよい。
 実装完了した項目は「完了アーカイブ」へ移動する。
 
 - 機能追加・未検証項目はこのファイルの対象外。

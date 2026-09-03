@@ -217,8 +217,8 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 
 ## 開発ワークフロー
 
-- 設計判断と handoff（`docs/handoffs/`）作成は Codex が担当（`AGENTS.md`）、
-  実装・検証は Claude Code が担当（`CLAUDE.md`）。
+- 設計判断と handoff（`docs/handoffs/`）作成、実装・検証は `AGENTS.md` の
+  Codex 委譲ポリシーに従う。`CLAUDE.md` は互換境界と補足手順を示す。
 - 改善候補は `docs/improvements.md` で管理（チェックを入れた項目から着手）。
 - JSON API の仕様は `docs/api.md`（ルート変更時に同期する）。
 - 検証コマンド: `python -m py_compile sender/*.py receiver/*.py input_common/*.py`
