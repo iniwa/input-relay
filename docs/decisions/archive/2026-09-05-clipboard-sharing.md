@@ -1,10 +1,10 @@
 # Main PC / Sub PC テキストクリップボード共有 設計
 
 - 作成日: 2026-09-05
-- 状態: 設計完了・未実装。現行 API の記述ではなく、次回実装用の提案仕様。
+- 状態: 実装・独立レビュー・Main/Sub 配備・実機確認完了。
 - 調査基準: input-relay `d330705`。開始時の作業ツリーに差分なし。
 - 今回の分類: `non-implementation`。実装担当予定はユーザー指定の Sol。
-- 引き継ぎ: [実装 handoff](../handoffs/2026-09-05-clipboard-sharing.md)
+- 引き継ぎ: [実装 handoff](../../handoffs/archive/2026-09-05-clipboard-sharing.md)
 
 ## 1. 要件と利用体験
 

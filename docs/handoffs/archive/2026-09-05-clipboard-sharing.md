@@ -1,9 +1,9 @@
 # Sol 向け: テキストクリップボード共有の実装引き継ぎ
 
 - 作成日: 2026-09-05
-- 状態: source-ready / correction round 1 offline 検証済み。実機確認と Codex 最終再レビュー待ち。
-- 担当予定: ユーザーが実装を依頼する Sol。今回は agent/task を起動していない。
-- 設計: [Main PC / Sub PC テキスト共有](../decisions/2026-09-05-clipboard-sharing.md)
+- 状態: complete。実装、独立レビュー、offline 検証、commit/push、Main/Sub 配備、実機確認済み。
+- 担当: Sol writer、Codex primary integration、独立 reviewer。
+- 設計: [Main PC / Sub PC テキスト共有](../../decisions/archive/2026-09-05-clipboard-sharing.md)
 - 基準 commit: `d330705`。引き継ぎ開始時に差分を再確認すること。
 - 次回実装の分類: `adaptive`（Win32 clipboard、非 activation、入力 listener と
   接続世代の横断動作を実機で成立させる必要がある）。分類は委譲を強制しない。
@@ -155,3 +155,28 @@ writer の安定自己レビュー後、本文漏出、接続世代失効、入�
   `py -3.11 -m ruff check .`、`git diff --check` も成功した。
 - correction 中も live clipboard、hook、socket、process、実設定は操作していない。commit、push、
   deploy は行っていない。実機未確認項目と再開条件、設計との差異は前節から変更なし。
+
+## 2026-09-05 配備・実機確認完了
+
+- standalone は機能 commit `4c499de` と配備記録 commit `ac000df` を通常 origin の `main` へ
+  push した。GitHub mirror の `main` も `ac000df` を指すことを確認した。
+- `secretary-bot` の gitlink を `ac000df` へ更新し、親 commit `8fe90f7` を通常 origin の
+  `main` へ push した。Main PC の既存 checkout にあった config、log、submodule working tree の
+  無関係な差分は変更、stage、削除していない。
+- 公式 Windows release updater で新しい source archive、release metadata、依存 wheel を生成した。
+  現在の Codex プロセスは medium integrity で、管理タスクが起動したプロセスの `cwd` を
+  `psutil` が検証できず、updater は `windows_busy_or_unavailable` として切替前に停止した。
+  稼働中サービスや launcher はその失敗で変更されていない。
+- 代替として、生成済み `ac000df` archive から本機能に必要な実行ファイル9件だけを Main/Sub の
+  現行管理 release へ配置した。既存4件は release 外へ退避し、全コピーを SHA-256 で照合した。
+  dependency、設定、port、firewall、認証、launcher、親 Agent、Pi は変更していない。
+  `secretary-bot` の gitlink は更新済みなので、次回の通常 full release にも同じ版が入る。
+- Sub receiver は Windows Agent 管理下へ戻して再起動し、Main sender も再起動した。両方で
+  health/listen と入力 WebSocket の再接続を確認し、最終状態は clipboard OFF とした。
+- Main の対話 session 1 で Shift + Scroll Lock を一時検証 hook から実入力として発生させた。
+  ON/OFF とも1回で状態が遷移し、Main→Sub と Sub→Main の無害なダミーテキストが完全一致した。
+  OFF 中に Sub で別テキストへ変更しても Main は直前の同期値を保持した。
+- 通知 HWND は切替前 `visible=false`、ON/OFF 直後 `true`、各3.2秒後 `false` だった。全観測で
+  foreground HWND は同一だった。検証 hook は正式ファイルの復元後に全削除し、最終再起動した。
+- 独立 reviewer の最終確認は material finding なし。offline 最終結果は clipboard focused 33件、
+  全 suite 185件、`py_compile`、Ruff、`git diff --check` が成功した。
