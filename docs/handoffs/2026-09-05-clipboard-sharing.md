@@ -124,6 +124,22 @@ writer の安定自己レビュー後、本文漏出、接続世代失効、入�
 - 再開条件: 既知の Main/Sub 2台で無害なダミーテキストだけを使えるとき、設計 §9 の実機表を
   実施し、本文漏出・旧接続失効・入力抑止・Win32 ownership/non-activation の最終レビューを通す。
 
+## 2026-09-05 配備記録（途中）
+
+- 実装を `4c499de` (`Add bidirectional clipboard sharing`) として standalone repository の
+  `origin/main` へ push した。
+- Sub PC の既存 receiver を `DELETE /api/restart` で再起動し、新しい PID で HTTP/WS listen、
+  Remote Control OFF、既存 Main sender の再接続を確認した。
+- Main PC の実運用 sender は standalone checkout ではなく、`secretary-bot` の pinned submodule
+  を含む release 配下から起動していることを確認した。Main の既存 sender は旧版のため、
+  capability offer を無視して通常の入力転送だけを継続している。
+- `secretary-bot` 親 checkout には本件開始前から config 2件、submodule pointer、runtime log 2件の
+  未コミット差分がある。これらは本件の commit に含めず、変更・削除していない。
+- Main への配備には、standalone の通常 origin とは別の mirror への push、`secretary-bot` の
+  submodule pointer 更新、検証済み release の作成と切替が必要。これらは project rule 上の
+  別承認対象なので未実施。
+- 実機の双方向 clipboard、物理 hotkey、通知、接続断試験は Main の同一版配備後に実施する。
+
 ## 2026-09-05 correction round 1
 
 - 独立レビュー指摘により、`CF_UNICODETEXT` は最初の UTF-16 NUL を論理終端として扱い、
