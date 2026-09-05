@@ -1,6 +1,6 @@
 # input-relay JSON API リファレンス
 
-> 調査日: 2026-04-15（最終更新: 2026-07-11）
+> 調査日: 2026-04-15（最終更新: 2026-09-05）
 > 対象: `receiver/input_server.py`, `sender/input_sender.py`, `sender/http_api.py`,
 > `sender/monitor_ws.py`, `input_common/gamepad.py`
 
@@ -15,7 +15,7 @@ input-relay は以下の 2 プロセスで構成される (単独モードでは
 | プロセス | 役割 | HTTP | WebSocket |
 |---------|------|------|-----------|
 | receiver | OBS オーバーレイ表示, 設定 GUI, sender 入力受信, リモート操作のホスト | 8081 (既定) | 8888 (既定) |
-| sender | キーボード/マウス/ゲームパッド入力をキャプチャして receiver に送信 | 8082 (既定) | 8083 (監視用, 既定) |
+| sender | キーボード/マウス/ゲームパッド入力をキャプチャして receiver に送信。2PC 間のテキスト clipboard client | 8082 (既定) | 8083 (監視用, 既定) |
 
 - すべて `0.0.0.0` で listen し、LAN 公開前提。
 - **認証はない。** LAN 内信頼ゾーンでのみ使用すること。
@@ -361,7 +361,7 @@ OBS のオーバーレイページ・設定 GUI ページが接続するエン�
 
 ブラウザ → サーバーのメッセージは `pass` (無視) される。
 
-### 3.2 `/` (それ以外) — sender 向け
+### 3.2 `/` — sender 向け
 
 sender が接続するエンドポイント (`sender_handler`)。同時接続は 1 つを想定 (`sender_ws` グローバルに最後の接続が入る)。
 
@@ -374,6 +374,9 @@ JSON テキストで以下を送る:
 | `key_down`, `key_up`, `mouse_move`, `mouse_scroll`, `axis_update` | 入力イベント。全 `/browser` クライアントにブロードキャストし、リモート操作 ON かつ sender 同期済みのときのみ OS 入力として注入 |
 | `remote_control` | sender 自身の明示的な現在状態 (`{"type":"remote_control","enabled":<bool>}`)。接続直後に ON/OFF いずれでも必ず 1 回送信され (通常入力の送信開始より前)、以後はトグルキーでの切替時にも送信される。receiver 側はこれを唯一の「sender 同期済み」根拠として扱い、その sender 接続の受信済み `enabled` 値をそのまま採用する (`false` でも明示的に受理し注入を OFF のまま維持) |
 
+通常 sender 経路へ誤送信された `clipboard_*` は破棄し、OS 入力注入にも
+`/browser` にも渡さない。clipboard 本文はこの接続では扱わない。
+
 JSON でない or パース不可能なメッセージは無視される。
 
 #### receiver → sender
@@ -382,11 +385,44 @@ JSON でない or パース不可能なメッセージは無視される。
 |------|------|
 | `remote_control` | receiver 側 GUI/API のトグル結果を sender に通知 (`{"type":"remote_control","enabled":<bool>}`)。ON への切替はこの通知が sender へ実際に届いた場合のみ API 成功として扱う |
 | `mode_switch` | 現在の表示モード (`key`: `keyboard` / `leverless` / `controller`)。`POST /api/mode-switch` 時と sender 接続直後に送られる。sender は controller/leverless の保存済みデバイス優先設定を解決する |
+| `clipboard_offer` | clipboard v1 対応通知。`version: 1` と入力接続ごとの UUID `session` のみを含み、本文は含まない。sender はこの通知を受けた場合だけ `/clipboard` を開く |
 
 新規接続の sender は、その接続自身が上記の状態メッセージを送るまで
 unsynchronized 扱いで、たとえ receiver 側に古い ON 状態が残っていても注入は
 行われない。切断時にもこの同期状態はリセットされ、リモート操作が ON なら
 自動で OFF になる (押下中キーも解放)。再接続後は改めて同期が必要。
+
+### 3.3 `/clipboard` — テキストクリップボード専用
+
+2PC モードだけで利用する双方向 WebSocket。既存 receiver WS と同じ port を使う。
+standalone では接続を拒否する。入力接続から `clipboard_offer` を受信した sender だけが
+接続し、最初の3秒以内に次の bind を送る。
+
+```json
+{"type":"clipboard_bind","version":1,"session":"<input接続のUUID>"}
+```
+
+現在の入力接続に属する session だけを受理し、専用接続は1本まで。重複 bind、旧 session、
+不正 JSON/型/フィールド、400 KiB を超える message は専用接続だけを終了する。入力接続の
+切断・置換時も対応する session、epoch、待機中本文を失効させる。再接続後の初期状態は OFF。
+
+| type | 方向 | 必須フィールド | 用途 |
+|------|------|----------------|------|
+| `clipboard_bind` | Main → Sub | `version`, `session` | 入力接続との関連付け |
+| `clipboard_set` | Main → Sub | `request_id`, `enabled` | 明示的な ON/OFF 要求 |
+| `clipboard_state` | Sub → Main | `request_id`, `enabled`, `epoch`, `reason` | 確定状態。初回/OFF は `epoch:null`、ON ごとに新 UUID |
+| `clipboard_propose` | Main → Sub | `epoch`, `origin_seq`, `text` | Main のローカルコピー提案 |
+| `clipboard_update` | Sub → Main | `epoch`, `revision`, `origin`, `origin_seq`, `text` | receiver が受付順を確定した更新 |
+| `clipboard_error` | 双方向 | `epoch`, `code` | 本文を含まない失敗通知 |
+
+整数は bool を受け付けない非負整数。`origin` は `main|sub`、`reason`/`code` は
+`user|disconnected|unavailable|busy|too_large|invalid_data|write_failed|worker_failed`。
+`too_large` は共有 ON を維持し、それ以外の worker/protocol 失敗は共有を停止する。
+
+`text` は非空の有効な Unicode 文字列で、埋め込み NUL と孤立 surrogate を許可せず、
+UTF-8 で 65,536 bytes 以下。receiver が両端の提案を受付順に revision へ確定するため、
+同時コピーは receiver が最後に受理した内容へ収束する。本文送信は各端最大10回/秒、
+ローカル読出し・本文送信・OS 適用の待機枠はそれぞれ最新1件に制限する。
 
 ---
 
@@ -458,6 +494,11 @@ sender の現在状態。
   "port": 8888,
   "selected_controller": 0,
   "remote_mode": false,
+  "clipboard": {
+    "state": "off",                    // "unavailable" | "off" | "enabling" | "on" | "disabling"
+    "enabled": false,                   // state == "on"
+    "reason": "user"
+  },
   "last_kbd_mouse_ts": 1712990000.1, // キーボード/マウス最終入力の UNIX 秒 (未観測は 0.0)
   "last_gamepad_ts": 1712990000.1,   // ゲームパッド最終入力の UNIX 秒 (未観測は 0.0)
   "server_time": 1712990000.2        // sender 側の現在時刻 (ts との差分計算用)
@@ -465,6 +506,7 @@ sender の現在状態。
 ```
 
 `last_*_ts` は secretary-bot 等が Main/Sub どちらを操作中かを判定するためのフィールド。リモートモード中のキーボード/マウス入力は Sub PC 側で消費されるが、ゲームパッドは物理的に Main PC 接続のため常に Main 側操作を意味する。
+`clipboard` には状態だけを載せ、本文、session、epoch、接続識別子は含めない。
 
 ### 4.5 `GET /api/controllers`
 
@@ -538,6 +580,7 @@ sender プロセスを `os.execv` で再起動。
 - 任意のクライアントが接続できる。**サーバー → クライアントの一方向ブロードキャスト**。クライアントから送られたメッセージは破棄される。
 - sender がキャプチャした全入力イベント (キーボード, マウスクリック/移動/スクロール, ゲームパッドボタン/ハット/軸) を実時間で配信する。
 - リモート操作トグル時には `remote_control_state` イベントも配信される。
+- clipboard 本文と `clipboard_*` 制御 message は配信されない。
 
 イベント形式は §6 と同じ。
 
@@ -711,3 +754,5 @@ sender の WebSocket ハンドラ (`sender_handler`) の `finally` cleanup で�
 - すべての書き込み API は楽観的: バリデーションは最小限。不正な JSON は HTTP 400、構造不備は overlay 側で表示崩れになる可能性あり。
 - `POST /api/config` はマージではなく**全置換**。GET → 編集 → POST のフローを徹底すること。
 - `DELETE /api/restart` (receiver) と `POST /api/restart` (sender) でメソッドが異なる点に注意。
+- clipboard 共有は Main PC の `Shift + Scroll Lock` だけで切り替える。HTTP POST/GUI toggle はなく、`GET /api/status` で状態のみ確認できる。
+- clipboard 共有は信頼済み private LAN / 無認証という既存境界を継承する。session/epoch は接続世代の取り違え防止用で、認証や暗号化ではない。

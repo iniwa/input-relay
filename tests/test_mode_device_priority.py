@@ -111,6 +111,9 @@ class ModeDevicePreferenceHandlerTests(unittest.TestCase):
             valid_overlay_positions=(),
             get_ws_status=lambda: "disconnected",
             get_remote_mode=lambda: False,
+            get_clipboard_status=lambda: {
+                "state": "off", "enabled": False, "reason": "user",
+            },
             get_input_timestamps=lambda: (0.0, 0.0),
         )
         handler_cls = http_api.make_handler(ctx)

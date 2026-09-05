@@ -19,9 +19,11 @@ if str(_ROOT) not in sys.path:
     sys.path.append(str(_ROOT))
 
 import gamepad as gamepad_mod
+import clipboard_client
 import http_api
 import ll_mouse_hook
 import monitor_ws
+import notification_window
 import overlay_window
 import raw_mouse
 import websockets
@@ -29,6 +31,7 @@ from pynput import keyboard, mouse
 
 from input_common.input_events import get_vk as _get_vk
 from input_common.input_events import key_to_str, make_event
+from input_common.clipboard_sync import ProtocolError, validate_message
 from input_common import persistent_config
 
 # Logging — silent except のトレースを掴めるよう default は INFO、
@@ -193,6 +196,80 @@ _gamepad = None  # gamepad_mod.Gamepad, created in main()
 
 # Monitor: WebSocket broadcaster, created in main()
 _monitor: monitor_ws.MonitorServer | None = None
+_clipboard_client: clipboard_client.ClipboardClient | None = None
+_notification_manager = notification_window.NotificationWindow()
+
+
+def _physical_key_down(vk):
+    try:
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+    except Exception:
+        return False
+
+
+class ClipboardHotkeyState:
+    """Physical Shift tracking and one-action-per-Scroll-Lock press latch."""
+
+    _SHIFT_VKS = (0xA0, 0xA1)
+    _SCROLL_VK = 0x91
+
+    def __init__(self, key_down=_physical_key_down):
+        self._key_down = key_down
+        self._shift_vks = set()
+        self._scroll_latched = False
+        self._lock = threading.Lock()
+
+    def _is_shift(self, key, vk):
+        return key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r) \
+            or vk in self._SHIFT_VKS
+
+    def press(self, key, vk):
+        with self._lock:
+            is_scroll = key == keyboard.Key.scroll_lock or vk == self._SCROLL_VK
+            if not is_scroll and self._scroll_latched and not self._key_down(self._SCROLL_VK):
+                self._scroll_latched = False
+            if self._is_shift(key, vk):
+                if vk in self._SHIFT_VKS:
+                    self._shift_vks.add(vk)
+                else:
+                    self._sync_shifts()
+                return None
+            if not is_scroll:
+                return None
+            if self._scroll_latched:
+                return "consume"
+            self._sync_shifts()
+            self._scroll_latched = True
+            return "clipboard" if self._shift_vks else "remote"
+
+    def release(self, key, vk):
+        with self._lock:
+            if self._is_shift(key, vk):
+                if vk in self._SHIFT_VKS:
+                    self._shift_vks.discard(vk)
+                else:
+                    self._sync_shifts()
+                return False
+            if key == keyboard.Key.scroll_lock or vk == self._SCROLL_VK:
+                self._scroll_latched = False
+                return True
+            return False
+
+    def reconcile(self):
+        with self._lock:
+            self._sync_shifts()
+            if self._scroll_latched and not self._key_down(self._SCROLL_VK):
+                self._scroll_latched = False
+
+    def _sync_shifts(self):
+        for vk in self._SHIFT_VKS:
+            if self._key_down(vk):
+                self._shift_vks.add(vk)
+            else:
+                self._shift_vks.discard(vk)
+
+
+_clipboard_hotkey = ClipboardHotkeyState()
 
 
 def _freeze_cursor():
@@ -303,10 +380,19 @@ def _emit_gamepad(msg, monitor=True):
 
 def on_press(key):
     _touch_kbd_mouse()
-    # Scroll Lock toggles remote control mode
-    if key == keyboard.Key.scroll_lock:
+    vk = _get_vk(key)
+    hotkey_action = _clipboard_hotkey.press(key, vk)
+    if hotkey_action == "clipboard":
+        if _clipboard_client is not None:
+            _clipboard_client.toggle()
+        else:
+            _notification_manager.show("共有できません：相手側の更新が必要です")
+        return
+    if hotkey_action == "remote":
         _set_remote_mode(not remote.mode)
-        return  # Don't send Scroll Lock to receiver
+        return
+    if hotkey_action == "consume":
+        return
 
     # Pause はリモート中にオーバーレイの表示/非表示を切り替える
     if key == keyboard.Key.pause:
@@ -320,11 +406,11 @@ def on_press(key):
             return  # Don't send Pause to receiver
 
     key_str = key_to_str(key)
-    vk = _get_vk(key)
+    pressed_identity = (key_str, vk)
     with _pressed_keys_lock:
-        is_repeat = key_str in pressed_keys
+        is_repeat = pressed_identity in pressed_keys
         if not is_repeat:
-            pressed_keys.add(key_str)
+            pressed_keys.add(pressed_identity)
     # リモートモード中はキーリピートも転送（長押し対応）
     if not is_repeat or remote.mode:
         msg = make_event("key_down", key_str, vk=vk)
@@ -333,10 +419,13 @@ def on_press(key):
 
 def on_release(key):
     _touch_kbd_mouse()
-    key_str = key_to_str(key)
     vk = _get_vk(key)
+    if _clipboard_hotkey.release(key, vk):
+        return
+    key_str = key_to_str(key)
+    pressed_identity = (key_str, vk)
     with _pressed_keys_lock:
-        pressed_keys.discard(key_str)
+        pressed_keys.discard(pressed_identity)
     _emit(make_event("key_up", key_str, vk=vk))
 
 
@@ -413,6 +502,12 @@ def _get_remote_mode():
     return remote.mode
 
 
+def _get_clipboard_status():
+    if _clipboard_client is None:
+        return {"state": "unavailable", "enabled": False, "reason": "unavailable"}
+    return _clipboard_client.snapshot()
+
+
 def _get_input_timestamps():
     with _input_ts_lock:
         return _last_kbd_mouse_ts, _last_gamepad_ts
@@ -433,6 +528,7 @@ def _build_http_context():
         valid_overlay_positions=_OVERLAY_POSITIONS,
         get_ws_status=_get_ws_status,
         get_remote_mode=_get_remote_mode,
+        get_clipboard_status=_get_clipboard_status,
         get_input_timestamps=_get_input_timestamps,
     )
 
@@ -452,12 +548,24 @@ async def _recv_from_receiver(ws):
         async for msg in ws:
             try:
                 data = json.loads(msg)
+                if not isinstance(data, dict):
+                    continue
                 if data.get("type") == "remote_control":
                     _set_remote_mode(data.get("enabled", False))
                 elif data.get("type") == "mode_switch":
                     mode = data.get("key")
                     if mode in ("keyboard", "leverless", "controller") and _gamepad is not None:
                         _gamepad.set_display_mode(mode)
+                elif data.get("type") == "clipboard_offer" and _clipboard_client is not None:
+                    try:
+                        offer = validate_message(
+                            data, allowed_types={"clipboard_offer"},
+                        )
+                    except ProtocolError:
+                        continue
+                    await _clipboard_client.accept_offer(
+                        offer["session"], config["host"], config["port"],
+                    )
             except (json.JSONDecodeError, ValueError):
                 pass
     except websockets.ConnectionClosed:
@@ -505,6 +613,8 @@ async def sender(host, port):
                 ws_status = "connected"
                 _reconnect_event.clear()
                 print("[Sender] Connected!")
+                if _clipboard_client is not None:
+                    _clipboard_client.mark_input_connected()
 
                 # Always report our explicit current remote mode state before
                 # any queued input is sent, so the receiver never assumes ON
@@ -562,6 +672,8 @@ async def sender(host, port):
                 pass
 
         # Safety: if disconnected while remote mode is on, disable it
+        if _clipboard_client is not None:
+            await _clipboard_client.input_disconnected()
         if remote.mode:
             _set_remote_mode(False)
             print("[Remote] Auto-disabled due to disconnection")
@@ -577,6 +689,7 @@ def _restart_listeners(suppress=False):
     安全なように stop は非ブロッキング前提で扱う。"""
     global _kb_listener, _mouse_listener
     with _restart_lock:
+        _clipboard_hotkey.reconcile()
         old_kb = _kb_listener
         old_mouse = _mouse_listener
         new_kb = keyboard.Listener(
@@ -638,11 +751,15 @@ async def _run_forever(name, coro_factory):
 
 
 async def main():
-    global _loop, _monitor
+    global _loop, _monitor, _clipboard_client
     global _kb_listener, _mouse_listener, _gamepad
     _loop = asyncio.get_event_loop()
     _monitor = monitor_ws.MonitorServer(_loop, lambda: running)
     remote.toggle_event = asyncio.Event()
+    await asyncio.to_thread(_notification_manager.start)
+    _clipboard_client = clipboard_client.ClipboardClient(
+        _loop, _notification_manager,
+    )
 
     _kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     _kb_listener.start()
@@ -678,11 +795,14 @@ async def main():
 
     # Start monitor WebSocket, sender, and remote toggle handler concurrently
     monitor_port = normalize_port(config.get("monitor_port"), DEFAULT_MONITOR_PORT)
-    await asyncio.gather(
-        _run_forever("sender", lambda: sender(config["host"], config["port"])),
-        _run_forever("monitor_ws", lambda: _monitor.serve(monitor_port)),
-        _run_forever("remote_toggle", _remote_toggle_handler),
-    )
+    try:
+        await asyncio.gather(
+            _run_forever("sender", lambda: sender(config["host"], config["port"])),
+            _run_forever("monitor_ws", lambda: _monitor.serve(monitor_port)),
+            _run_forever("remote_toggle", _remote_toggle_handler),
+        )
+    finally:
+        await _clipboard_client.shutdown()
 
 
 def _shutdown_local_resources():

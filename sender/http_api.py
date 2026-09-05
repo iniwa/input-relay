@@ -71,6 +71,7 @@ class SenderContext:
     valid_overlay_positions: tuple
     get_ws_status: Callable[[], str]
     get_remote_mode: Callable[[], bool]
+    get_clipboard_status: Callable[[], dict]
     get_input_timestamps: Callable[[], Tuple[float, float]]
 
 
@@ -135,6 +136,7 @@ def make_handler(ctx: SenderContext):
                     "port": config.get("port", 8888),
                     "selected_controller": gamepad.selected_id() if gamepad else 0,
                     "remote_mode": ctx.get_remote_mode(),
+                    "clipboard": ctx.get_clipboard_status(),
                     # Multi-PC activity detection 用フィールド（未観測は 0.0）
                     "last_kbd_mouse_ts": kbd_ts,
                     "last_gamepad_ts": gp_ts,

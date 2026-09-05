@@ -18,10 +18,11 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.append(str(_ROOT))
 
-import websockets
+import websockets  # noqa: E402
 
-import input_injector
-from input_common import persistent_config
+import clipboard_server  # noqa: E402
+import input_injector  # noqa: E402
+from input_common import persistent_config  # noqa: E402
 
 logging.basicConfig(
     level=logging.DEBUG if os.environ.get("INPUT_RELAY_DEBUG") else logging.INFO,
@@ -39,6 +40,7 @@ _display_mode_lock = threading.Lock()
 _ws_loop = None  # asyncio event loop, set in main()
 _ws_port = 8888  # WebSocket port, set in main()
 _http_server = None  # ThreadingHTTPServer instance, for shutdown
+_clipboard_hub = None  # ClipboardServerHub in two-PC mode only
 
 # Standalone mode
 _standalone_queue = None  # asyncio.Queue, set in main() when standalone
@@ -739,6 +741,7 @@ async def sender_handler(ws):
         sender_ws = ws
         _sender_synchronized = False
     print(f"[Sender] Connected from {ws.remote_address}")
+    clipboard_session = None
     try:
         with _display_mode_lock:
             current_mode = _display_mode
@@ -746,10 +749,16 @@ async def sender_handler(ws):
             "type": "mode_switch", "key": current_mode,
             "source": "system", "timestamp": time.time(),
         }))
+        if _clipboard_hub is not None:
+            offer = await _clipboard_hub.register_sender(ws)
+            clipboard_session = offer["session"]
+            await ws.send(json.dumps(offer))
         async for msg in ws:
             try:
                 event = json.loads(msg)
             except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(event, dict):
                 continue
 
             # A replacement sender may already have connected while this
@@ -768,6 +777,11 @@ async def sender_handler(ws):
                 _set_rc_state(event.get("enabled", False), mark_synchronized=True)
                 continue
 
+            # Clipboard payloads are valid only on /clipboard.  Never pass a
+            # misplaced clipboard_* message to injection or browser clients.
+            if str(event.get("type", "")).startswith("clipboard_"):
+                continue
+
             # Remote control: inject as OS input first (state check + inject
             # + tracked-state update happen atomically inside
             # _rc_inject_event), so a stalled browser send can never delay
@@ -777,6 +791,8 @@ async def sender_handler(ws):
             # Broadcast to browsers (existing behavior)
             await broadcast_to_browsers(msg)
     finally:
+        if _clipboard_hub is not None and clipboard_session is not None:
+            await _clipboard_hub.unregister_sender(ws, clipboard_session)
         with _rc_lock:
             if sender_ws is ws:
                 sender_ws = None
@@ -799,6 +815,14 @@ async def ws_handler(ws):
     path = ws.request.path if hasattr(ws, 'request') else (ws.path if hasattr(ws, 'path') else "/")
     if path == "/browser":
         await browser_handler(ws)
+    elif path == "/clipboard":
+        if _clipboard_hub is None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+            return
+        await _clipboard_hub.handle(ws)
     else:
         await sender_handler(ws)
 
@@ -835,9 +859,10 @@ async def _standalone_broadcaster():
 
 
 async def main(ws_port=8888, http_port=8080, standalone=False):
-    global _ws_loop, _ws_port, _standalone_queue
+    global _ws_loop, _ws_port, _standalone_queue, _clipboard_hub
     _ws_loop = asyncio.get_event_loop()
     _ws_port = ws_port
+    _clipboard_hub = None if standalone else clipboard_server.ClipboardServerHub(_ws_loop)
 
     http_thread = threading.Thread(
         target=start_http_server, args=(http_port,), daemon=True

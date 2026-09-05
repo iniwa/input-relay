@@ -33,6 +33,11 @@ Main PC (sender)              Sub PC (receiver)
 └──────────────┘               └──────────────────────────┘
 ```
 
+2PC モードでは、テキストクリップボードを双方向共有できる。Main PC で
+`Shift + Scroll Lock` を押すと ON/OFF が切り替わり、ON にした後でコピーした
+プレーンテキストだけが相手 PC へ届く。画像・ファイル・書式・ON 前の内容は共有しない。
+共有は起動時と再接続時に必ず OFF へ戻る。
+
 ## セットアップ
 
 ### 単独モード（1PC）
@@ -140,6 +145,9 @@ Main PC で `http://localhost:8082/` の Sender GUI を使う。
 Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモードを切り替え可能。
 設定 GUI からもトグルできる。
 
+`Shift + Scroll Lock` は独立したクリップボード共有の切替に使う。この組み合わせでは
+リモートコントロール状態、入力抑止、カーソル固定、リモート表示を変更しない。
+
 リモートモード中は Main PC の画面端に「`target_name` を操作中」という半透明オーバーレイが
 表示され、ゲームウィンドウからフォーカスを奪うことでキーボード・マウス操作がゲームに
 届かないようにする。解除するとオーバーレイが破棄され、Z オーダーで元のウィンドウが
@@ -172,6 +180,17 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 `middle-left` / `middle-right` /
 `bottom-left` / `bottom-center` / `bottom-right`
 
+## テキストクリップボード共有（2PC モードのみ）
+
+Main PC の `Shift + Scroll Lock` で共有を ON にすると、それ以後に Main/Sub の
+どちらかでコピーしたプレーンテキストを相手側のクリップボードへ反映する。最大サイズは
+UTF-8 で 64 KiB。空文字、画像、ファイル、HTML/RTF の書式は共有しない。
+
+共有状態は Main PC の通知と Sender GUI (`http://localhost:8082/`) で確認できる。
+通知は約3秒で消え、フォーカスやクリックを奪わない。接続断、sender/receiver の再接続、
+プロセス再起動では共有が OFF に戻り、自動再開しない。相手が旧版の場合も通常の入力転送と
+リモートコントロールは継続し、共有だけが利用不可になる。
+
 ## ファイル構成
 
 ```
@@ -183,18 +202,23 @@ Scroll Lock キーで Main PC の入力を Sub PC に注入するリモコンモ
 │   └── *.example.json                # 設定テンプレート
 ├── input_common/
 │   ├── input_events.py               # キー正規化・共通イベント生成
+│   ├── clipboard_sync.py              # clipboard v1 検証・revision・有界 mailbox
+│   ├── clipboard_win32.py             # Win32 clipboard 専用 worker
 │   └── gamepad.py                    # 共有ゲームパッド polling (60Hz)
 ├── sender/
 │   ├── input_sender.py               # 入力キャプチャ + WebSocket 送信
+│   ├── clipboard_client.py            # clipboard capability と専用 WS client
 │   ├── gamepad.py                    # 共有 Gamepad への互換 wrapper
 │   ├── http_api.py                   # Sender GUI / JSON API
 │   ├── monitor_ws.py                 # 入力監視 WebSocket
 │   ├── raw_mouse.py                  # Raw Input マウス移動取得 (60Hz flush)
 │   ├── ll_mouse_hook.py              # WH_MOUSE_LL フック (リモート中のボタン抑止)
 │   ├── overlay_window.py             # リモートモード中の画面端オーバーレイ
+│   ├── notification_window.py        # 非アクティブな clipboard 状態通知
 │   └── sender_gui.html               # Sender 設定画面
 ├── receiver/
 │   ├── input_server.py               # WebSocket サーバー + HTTP サーバー
+│   ├── clipboard_server.py           # clipboard 専用 WS と順序確定
 │   ├── input_injector.py             # リモコン用入力注入
 │   ├── standalone_capture.py         # 単独モード用入力キャプチャ
 │   ├── overlay.html                  # OBS 用オーバーレイ

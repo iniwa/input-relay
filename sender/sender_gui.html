@@ -177,6 +177,7 @@
     <div class="connection-dot" id="wsDot"></div>
     <span id="wsStatus">確認中...</span>
     <span id="remoteStatus" style="margin-left:20px;padding:4px 12px;border-radius:4px;font-size:13px;font-weight:bold;background:#2a4a2a;color:#6a6;">Remote: OFF</span>
+    <span id="clipboardStatus" style="margin-left:8px;padding:4px 12px;border-radius:4px;font-size:13px;font-weight:bold;background:#2a4a2a;color:#6a6;">クリップボード共有：OFF</span>
   </div>
 </div>
 
@@ -187,6 +188,10 @@
     <tr>
       <td style="padding:4px 16px 4px 0;"><kbd style="background:#3a3a6a;padding:3px 10px;border-radius:4px;border:1px solid #555;font-family:inherit;">Scroll Lock</kbd></td>
       <td style="padding:4px 0;color:#aaa;">リモート操作モード ON/OFF</td>
+    </tr>
+    <tr>
+      <td style="padding:4px 16px 4px 0;"><kbd style="background:#3a3a6a;padding:3px 10px;border-radius:4px;border:1px solid #555;font-family:inherit;">Shift + Scroll Lock</kbd></td>
+      <td style="padding:4px 0;color:#aaa;">クリップボード共有 ON/OFF</td>
     </tr>
   </table>
 </div>
@@ -316,6 +321,19 @@ async function fetchStatus() {
         rcEl.style.background = '#2a4a2a';
         rcEl.style.color = '#6a6';
       }
+    }
+    const clipboardEl = document.getElementById('clipboardStatus');
+    if (clipboardEl && data.clipboard) {
+      const clipboardLabels = {
+        unavailable: '利用不可',
+        off: 'OFF',
+        enabling: '切替中...',
+        on: 'ON',
+        disabling: '停止中...'
+      };
+      clipboardEl.textContent = `クリップボード共有：${clipboardLabels[data.clipboard.state] || '利用不可'}（Shift + Scroll Lock で切替）`;
+      clipboardEl.style.background = data.clipboard.enabled ? '#1a4a1a' : '#2a4a2a';
+      clipboardEl.style.color = data.clipboard.enabled ? '#4f8' : '#6a6';
     }
     return data;
   } catch (e) {

@@ -40,6 +40,18 @@ class SenderGuiMonitorPortStaticTests(unittest.TestCase):
         # automatically reuses whatever was last normalized.
         self.assertIn("monitorWs.onclose = () => {\n    setTimeout(connectMonitor, 2000);", self.text)
 
+    def test_clipboard_state_is_displayed_without_a_gui_toggle(self):
+        self.assertIn('id="clipboardStatus"', self.text)
+        self.assertIn("data.clipboard.state", self.text)
+        self.assertIn("Shift + Scroll Lock", self.text)
+        self.assertNotIn("toggleClipboard", self.text)
+
+    def test_clipboard_body_is_not_handled_by_monitor_websocket(self):
+        m = re.search(r"function connectMonitor\(\)\s*\{(.*?)\n\}", self.text, re.S)
+        self.assertIsNotNone(m)
+        self.assertNotIn("clipboard_", m.group(1))
+        self.assertNotIn("clipboard.text", self.text)
+
 
 if __name__ == "__main__":
     unittest.main()
