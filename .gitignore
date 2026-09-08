@@ -52,3 +52,6 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# Local agent metadata
+.codex/
