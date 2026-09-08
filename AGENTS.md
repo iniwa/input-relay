@@ -69,11 +69,17 @@ are reported separately as blocked, never passed.
 
 ## Work routing and review
 
-Classify work as `small-primary`, `bounded`, `adaptive`, or
-`non-implementation`; classification does not force delegation. Configuration
-owns model, effort, and role-specific instructions; the user's runtime choice
-remains authoritative. The primary owns interpretation, approvals, integration,
-and communication. Use one configured writer for settled cohesive work; use an
+Default to primary execution. The primary owns design, implementation, related discovery, verification, minor
+corrections, final acceptance, interpretation, approvals, integration, and
+communication at any task size. Classify work as `small-primary`, `bounded`,
+`adaptive`, or `non-implementation`; classification does not force delegation.
+delegate autonomously within existing authority only when replacing primary work lowers expected total effort including
+handoff, communication, waiting, integration, verification, and corrections, or
+when a named material risk or mandatory independent verification gate warrants
+it. Size or uncertainty alone is insufficient; routine direct work needs no
+per-task justification. Configuration owns model, effort, and role-specific
+instructions; the user's runtime choice remains authoritative. Use one
+configured writer for settled cohesive work; use an
 explorer only for independent read-only discovery and a reviewer only for a
 named material correctness, security, compatibility, or verification risk.
 Parent permissions and live overrides remain authoritative; read-only roles
@@ -103,4 +109,8 @@ contracts, and evidence for every required criterion. Report changed files,
 material effects, commands and outcomes, blocked/unmet checks, partial work,
 and exact resume conditions. Keep API details in `docs/api.md`, improvements in
 `docs/improvements.md`, and rationale/history in decisions or handoffs.
-For incomplete delegated work, report the blocker, resume condition, and next owner/action. Requested model or effort is configuration context, not execution evidence; unknown stays unknown, with no diagnostic-only agents or probes to fill observation fields. After stable-diff review, read deeper only for gaps, conflicts, or concrete risk; rerun checks only for a mandatory contract, changed target or assumption, insufficient evidence, or integration risk. Return concise results and evidence references without raw logs or unchanged inventories. While children run, continue useful work within existing ownership and parallelism rules; otherwise wait for notifications. Avoid liveness-only polling, rereads, or state rewrites; respond to errors, inconsistent state, and user steering, and follow host progress rules.
+Reassess ownership when primary execution lowers expected remaining total effort or delegation is unavailable. The primary may reclaim work of any size before correction thresholds, after confirming child writes have stopped and ownership has returned, and resetting acceptance, protected boundaries, authority, environment, and evidence. Required verification and preservation of safe blocked work still apply. Existing mandatory independent and multi-reviewer gates remain in force.
+
+Before implementation, decide whether to delegate, then choose the role and route: `small-primary` for direct work of any size, `bounded` for a settled delegated outcome, `adaptive` for delegated material technical uncertainty, or `non-implementation`.
+
+For incomplete delegated work, report the blocker, resume condition, and next owner/action. Requested model or effort is configuration context, not execution evidence; unknown stays unknown, with no diagnostic-only agents or probes to fill observation fields. After stable-diff review, read deeper only for gaps, conflicts, or concrete risk; rerun checks only for a mandatory contract, changed target or assumption, insufficient evidence, or integration risk. Return concise results and evidence references without raw logs or unchanged inventories. While children run, continue useful work within existing ownership and parallelism rules; otherwise wait for notifications. Do not add research/checks, inspect a changing candidate, or repeat liveness polling, rereads, or state updates merely to fill the wait or observe liveness. Respond to errors, inconsistent state, and user steering, and follow host progress rules.
